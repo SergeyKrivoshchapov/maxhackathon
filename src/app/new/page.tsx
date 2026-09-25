@@ -5,8 +5,8 @@ import { useMainButton } from '@/hooks/useMainButton';
 import { useHaptic } from '@/hooks/useHaptic';
 import { useMax } from '@/components/providers/MaxProvider';
 import { Spinner } from '@/components/ui/Spinner';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 type Ticket = {
   id: string; title: string; status: string;
