@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadge } from './ui/StatusBadge';
 
 type Props = {
   t: {
