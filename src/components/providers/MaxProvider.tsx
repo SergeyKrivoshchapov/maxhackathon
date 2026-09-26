@@ -9,7 +9,7 @@ export function MaxProvider({ children }: { children: React.ReactNode }) {
   const [wa, setWa] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ready, setReady] = useState(false);
-
+  
   const applyTheme = useCallback((w: any) => {
     const t = w.themeParams ?? {};
     const root = document.documentElement;
@@ -62,7 +62,10 @@ export function MaxProvider({ children }: { children: React.ReactNode }) {
           console.error('auth failed', e);
         }
       }
-      if (!cancelled) setReady(true);
+      else {
+        if (!cancelled) setReady(true);
+        return;
+      }
     };
 
     init();
