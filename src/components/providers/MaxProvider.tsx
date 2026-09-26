@@ -2,8 +2,8 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 type Profile = { id: string; maxUserId: number; firstName: string | null; role: string };
-type Ctx = { wa: any; profile: Profile | null; ready: boolean };
-const MaxCtx = createContext<Ctx>({ wa: null, profile: null, ready: false });
+type Ctx = { wa: any; profile: Profile | null; ready: boolean; inMax: boolean };
+const MaxCtx = createContext<Ctx>({ wa: null, profile: null, ready: false, inMax: false });
 
 export function MaxProvider({ children }: { children: React.ReactNode }) {
   const [wa, setWa] = useState<any>(null);

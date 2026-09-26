@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { tickets, ticketEvents, profiles } from '@/db/schema';
+import { tickets, ticketEvents, ticketMessages } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { notifyUser } from './max-bot';
 

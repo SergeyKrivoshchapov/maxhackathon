@@ -1,22 +1,36 @@
+// src/app/api/me/route.ts
 import { NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { db } from '@/db';
+import { profiles, residencies, premises, houses } from '@/db/schema';
 import { getProfileFromRequest } from '@/lib/max-auth';
 
-export async function GET(req: Request) {
-  const auth = await getProfileFromRequest(req);
-  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+export const runtime = 'nodejs';
 
-  const profile = await db.query.profiles.findFirst({
-    where: eq(profiles.id, auth.profile.id),
-    with: {
-      residencies: {
-        with: {
-          premise: {
-            with: { house: true },
-          },
-        },
-      },
-    },
+export async function GET() {
+  const profile = await getProfileFromRequest();
+  if (!profile) {
+    return NextResponse.json({ error: 'unauth' }, { status: 401 });
+  }
+
+  const userResidencies = await db
+    .select({
+      residencyId: residencies.id,
+      verified: residencies.verified,
+      premiseId: premises.id,
+      premiseNumber: premises.number,
+      premiseType: premises.type,
+      houseId: houses.id,
+      houseAddress: houses.address,
+      houseRegion: houses.region,
+    })
+    .from(residencies)
+    .leftJoin(premises, eq(residencies.premiseId, premises.id))
+    .leftJoin(houses, eq(premises.houseId, houses.id))
+    .where(eq(residencies.profileId, profile.id));
+
+  return NextResponse.json({
+    ...profile,
+    residencies: userResidencies,
   });
-
-  return NextResponse.json(profile);
 }
