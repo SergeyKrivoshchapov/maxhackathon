@@ -1,4 +1,10 @@
+import { db } from '@/db';
+import { profiles } from '@/db/schema';
 import crypto from 'crypto';
+import { eq } from 'drizzle-orm';
+import { cookies } from 'next/headers';
+import { verifyJwt } from './jwt';
+import { NextRequest } from 'next/server';
 
 export type MaxUser = {
   id: number;
@@ -46,4 +52,19 @@ export function verifyInitData(
   if (Date.now() / 1000 - authDate > 86400) return { ok: false };
 
   return { ok: true, user, authDate };
+}
+
+export async function getProfileFromRequest() {
+  const token = (await cookies()).get('app_token')?.value;
+  if (!token) return null;
+
+  const payload = verifyJwt(token, process.env.APP_JWT_SECRET!);
+  if (!payload?.sub) return null;
+
+  const [profile] = await db
+    .select()
+    .from(profiles)
+    .where(eq(profiles.id, payload.sub as string));
+
+  return profile ?? null;
 }

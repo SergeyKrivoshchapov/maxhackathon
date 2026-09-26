@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getProfileFromRequest } from '@/lib/max-auth';
 
-export async function GET(req: Request) {
-  const auth = await getProfileFromRequest(req);
-  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+export const runtime = 'nodejs';
 
-  return NextResponse.json(auth.profile);
+export async function GET() {
+  const profile = await getProfileFromRequest();
+  if (!profile) {
+    return NextResponse.json({ error: 'unauth' }, { status: 401 });
+  }
+  return NextResponse.json(profile);
 }

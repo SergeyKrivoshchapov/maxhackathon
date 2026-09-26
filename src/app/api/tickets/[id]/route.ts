@@ -1,33 +1,63 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { eq, asc } from 'drizzle-orm';
 import { db } from '@/db';
-import { tickets } from '@/db/schema';
+import {
+  tickets, ticketMessages, ticketEvents, profiles, categories,
+} from '@/db/schema';
 import { getProfileFromRequest } from '@/lib/max-auth';
-import { eq } from 'drizzle-orm';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const auth = await getProfileFromRequest(req);
-  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const { profile } = auth;
+export const runtime = 'nodejs';
 
-  const ticket = await db.query.tickets.findFirst({
-    where: eq(tickets.id, params.id),
-    with: {
-      category: true,
-      premise: { with: { house: true } },
-      author: true,
-      assignee: true,
-      messages: { orderBy: (m, { asc }) => [asc(m.createdAt)] },
-      events: { orderBy: (e, { asc }) => [asc(e.createdAt)] },
-    },
-  });
+export async function GET(
+  _: NextRequest,
+  { params }: { params: Promise<{ id: string }> }   // ← Promise
+) {
+  const { id } = await params;                       // ← await
 
-  if (!ticket) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const profile = await getProfileFromRequest();     // ← без req
+  if (!profile) return NextResponse.json({ error: 'unauth' }, { status: 401 });
 
-  const isAuthor = ticket.authorId === profile.id;
-  const isStaff = ['uk', 'admin'].includes(profile.role);
-  if (!isAuthor && !isStaff) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const [ticket] = await db
+    .select({
+      id: tickets.id,
+      title: tickets.title,
+      description: tickets.description,
+      status: tickets.status,
+      priority: tickets.priority,
+      photos: tickets.photos,
+      createdAt: tickets.createdAt,
+      slaDeadline: tickets.slaDeadline,
+      authorId: tickets.authorId,
+      categoryName: categories.name,
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.categoryId, categories.id))
+    .where(eq(tickets.id, id));
+
+  if (!ticket) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (ticket.authorId !== profile.id && profile.role === 'resident') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  return NextResponse.json(ticket);
+  const msgs = await db
+    .select({
+      id: ticketMessages.id,
+      body: ticketMessages.body,
+      attachments: ticketMessages.attachments,
+      isSystem: ticketMessages.isSystem,
+      createdAt: ticketMessages.createdAt,
+      authorName: profiles.firstName,
+    })
+    .from(ticketMessages)
+    .leftJoin(profiles, eq(ticketMessages.authorId, profiles.id))
+    .where(eq(ticketMessages.ticketId, id))
+    .orderBy(asc(ticketMessages.createdAt));
+
+  const events = await db
+    .select()
+    .from(ticketEvents)
+    .where(eq(ticketEvents.ticketId, id))
+    .orderBy(asc(ticketEvents.createdAt));
+
+  return NextResponse.json({ ticket, messages: msgs, events });
 }

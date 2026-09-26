@@ -9,6 +9,7 @@ import { useMax } from '@/components/providers/MaxProvider';
 import { Spinner } from '@/components/ui/Spinner';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/TextArea';
 
 type Category = { id: number; name: string; code: string };
 
