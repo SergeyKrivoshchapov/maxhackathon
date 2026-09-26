@@ -21,8 +21,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru">
-      <body>
+    <html lang="ru" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Script src="https://st.max.ru/js/max-web-app.js" strategy="beforeInteractive" />
         <MaxProvider>{children}</MaxProvider>
       </body>
