@@ -7,6 +7,7 @@ import { useMax } from '@/components/providers/MaxProvider';
 import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { OpenInMax } from '@/components/OpenInMax';
 
 type Ticket = {
   id: string;
@@ -19,7 +20,7 @@ type Ticket = {
 
 export default function HomePage() {
   const router = useRouter();
-  const { wa, profile, ready } = useMax();
+  const { wa, profile, ready, inMax } = useMax();
   const haptic = useHaptic();
 
   const [items, setItems] = useState<Ticket[]>([]);
@@ -46,6 +47,8 @@ export default function HomePage() {
   });
 
   if (!ready) return <Spinner />;
+
+  if (!inMax) return <OpenInMax />;
 
   if (!wa?.initData) {
     return (

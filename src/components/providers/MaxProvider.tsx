@@ -71,8 +71,9 @@ export function MaxProvider({ children }: { children: React.ReactNode }) {
     init();
     return () => { cancelled = true; };
   }, [applyTheme]);
+  const inMax = !!wa?.initData;
 
-  return <MaxCtx.Provider value={{ wa, profile, ready }}>{children}</MaxCtx.Provider>;
+  return <MaxCtx.Provider value={{ wa, profile, ready, inMax }}>{children}</MaxCtx.Provider>;
 }
 
 function isDark(hex?: string) {
