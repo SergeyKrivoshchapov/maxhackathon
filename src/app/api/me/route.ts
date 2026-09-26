@@ -5,5 +5,18 @@ export async function GET(req: Request) {
   const auth = await getProfileFromRequest(req);
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  return NextResponse.json(auth.profile);
+  const profile = await db.query.profiles.findFirst({
+    where: eq(profiles.id, auth.profile.id),
+    with: {
+      residencies: {
+        with: {
+          premise: {
+            with: { house: true },
+          },
+        },
+      },
+    },
+  });
+
+  return NextResponse.json(profile);
 }
