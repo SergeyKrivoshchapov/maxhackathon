@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMainButton } from '@/hooks/useMainButton';
@@ -15,7 +16,7 @@ type Category = { id: number; name: string; code: string };
 
 export default function NewTicketPage() {
   const router = useRouter();
-  const { wa, ready } = useMax();
+  const { wa, ready, inMax } = useMax();
   const haptic = useHaptic();
   const dialog = useDialog();
 
@@ -27,10 +28,35 @@ export default function NewTicketPage() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
+  // ─── Загрузка категорий с логами ───────────────────────────
   useEffect(() => {
-    fetch('/api/categories').then((r) => r.json()).then(setCategories);
+    let cancelled = false;
+    console.log('[new] fetching categories');
+
+    fetch('/api/categories')
+      .then((r) => {
+        console.log('[new] categories status:', r.status);
+        return r.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        console.log('[new] categories body:', data);
+        if (Array.isArray(data)) setCategories(data);
+        else {
+          console.warn('[new] categories not array:', data);
+          setCategories([]);
+        }
+      })
+      .catch((e) => {
+        console.error('[new] categories failed:', e);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  // ─── Нативные кнопки ───────────────────────────────────────
   useBackButton(() => router.back());
 
   const submit = useCallback(async () => {
@@ -51,72 +77,113 @@ export default function NewTicketPage() {
         }),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
       haptic.success();
       await dialog.alert('Обращение отправлено');
       router.push('/');
     } catch (e: any) {
       haptic.error();
-      await dialog.alert(`Ошибка: ${e.message}`);
+      await dialog.alert(`Ошибка: ${e?.message ?? 'неизвестная'}`);
     } finally {
       setBusy(false);
     }
   }, [catId, title, desc, photos, priority, busy, haptic, dialog, router]);
 
+  const hasNativeButton = !!wa?.MainButton;
+
   useMainButton({
     text: 'Отправить',
-    visible: !!wa?.initData,
+    visible: inMax && hasNativeButton,
     enabled: !!catId && !!title.trim() && !busy,
     progress: busy,
     onClick: submit,
   });
 
-  if (!ready) return <Spinner />;
-
-  if (!wa?.initData) {
-    return (
-      <div style={{ textAlign: 'center', padding: 60 }}>
-        <div style={{ fontSize: 48 }}>📱</div>
-        <h2>Откройте через MAX</h2>
-        <p style={{ color: 'var(--hint)' }}>Приложение работает внутри MAX.</p>
-      </div>
-    );
-  }
-
-  const pickPhoto = async () => {
+  // ─── Логика выбора фото ────────────────────────────────────
+  const pickPhoto = useCallback(async () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     input.multiple = true;
+
     input.onchange = async () => {
-      const { supabaseBrowser } = await import('@/lib/supabase');
       const files = Array.from(input.files ?? []);
       if (!files.length) return;
-      setBusy(true);
-      const urls: string[] = [];
-      for (const f of files) {
-        const path = `tickets/${crypto.randomUUID()}-${f.name}`;
-        const { error } = await supabaseBrowser.storage
-          .from('ticket-photos')
-          .upload(path, f);
-        if (error) continue;
-        const { data } = supabaseBrowser.storage
-          .from('ticket-photos')
-          .getPublicUrl(path);
-        urls.push(data.publicUrl);
-      }
-      setPhotos((p) => [...p, ...urls]);
-      setBusy(false);
-      haptic.tap();
-    };
-    input.click();
-  };
 
+      setBusy(true);
+      try {
+        const { supabaseBrowser } = await import('@/lib/supabase');
+        const urls: string[] = [];
+
+        for (const f of files) {
+          const path = `tickets/${crypto.randomUUID()}-${f.name}`;
+          const { error } = await supabaseBrowser.storage
+            .from('ticket-photos')
+            .upload(path, f);
+
+          if (error) {
+            console.error('[new] upload failed:', error);
+            continue;
+          }
+
+          const { data } = supabaseBrowser.storage
+            .from('ticket-photos')
+            .getPublicUrl(path);
+
+          if (data?.publicUrl) urls.push(data.publicUrl);
+        }
+
+        setPhotos((p) => [...p, ...urls]);
+        haptic.tap();
+      } catch (e) {
+        console.error('[new] pickPhoto failed:', e);
+        await dialog.alert('Не удалось загрузить фото');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    input.click();
+  }, [haptic, dialog]);
+
+  // ─── Ранние возвраты — строго ПОСЛЕ всех хуков ─────────────
+  if (!ready) return <Spinner />;
+
+  if (!inMax) {
+    return (
+      <div style={{ textAlign: 'center', padding: 60 }}>
+        <div style={{ fontSize: 48 }}>📱</div>
+        <h2>Откройте через MAX</h2>
+        <p style={{ color: 'var(--hint)' }}>
+          Приложение работает внутри мессенджера MAX.
+        </p>
+      </div>
+    );
+  }
+
+  // ─── Обычный UI ────────────────────────────────────────────
   return (
-    <main className="screen" style={{ padding: '8px 16px' }}>
+    <main
+      className="screen"
+      style={{
+        padding: '8px 16px',
+        paddingBottom: hasNativeButton
+          ? 16
+          : 'calc(90px + env(safe-area-inset-bottom, 0))',
+      }}
+    >
       <div className="section-title">Категория</div>
-      <Select value={catId ?? ''} onChange={(e) => setCatId(Number(e.target.value))}>
+      <Select
+        value={catId ?? ''}
+        onChange={(e) => setCatId(Number(e.target.value))}
+      >
         <option value="">— выберите —</option>
+        {categories.length === 0 && (
+          <option value="" disabled>Загрузка категорий…</option>
+        )}
         {categories.map((c) => (
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
@@ -139,7 +206,10 @@ export default function NewTicketPage() {
       />
 
       <div className="section-title">Приоритет</div>
-      <Select value={priority} onChange={(e) => setPriority(e.target.value as any)}>
+      <Select
+        value={priority}
+        onChange={(e) => setPriority(e.target.value as any)}
+      >
         <option value="low">Низкий</option>
         <option value="normal">Обычный</option>
         <option value="high">Высокий</option>
@@ -151,10 +221,15 @@ export default function NewTicketPage() {
         onClick={pickPhoto}
         disabled={busy}
         style={{
-          width: '100%', padding: 14, borderRadius: 10,
+          width: '100%',
+          padding: 14,
+          borderRadius: 10,
           border: '1px dashed var(--separator)',
           background: 'var(--bg-secondary)',
-          color: 'var(--link)', fontSize: 15, cursor: 'pointer',
+          color: 'var(--link)',
+          fontSize: 15,
+          cursor: busy ? 'wait' : 'pointer',
+          opacity: busy ? 0.6 : 1,
         }}
       >
         + Добавить фото
@@ -171,6 +246,33 @@ export default function NewTicketPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Fallback-кнопка «Отправить», если MainButton нет (веб-MAX) */}
+      {!hasNativeButton && (
+        <button
+          onClick={submit}
+          disabled={!catId || !title.trim() || busy}
+          style={{
+            position: 'fixed',
+            left: 16,
+            right: 16,
+            bottom: 'calc(16px + env(safe-area-inset-bottom, 0))',
+            padding: '16px 20px',
+            border: 'none',
+            borderRadius: 12,
+            background: 'var(--button, #2481cc)',
+            color: 'var(--button-text, #fff)',
+            fontSize: 16,
+            fontWeight: 600,
+            cursor: (!catId || !title.trim() || busy) ? 'not-allowed' : 'pointer',
+            opacity: (!catId || !title.trim() || busy) ? 0.5 : 1,
+            boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
+            zIndex: 100,
+          }}
+        >
+          {busy ? 'Отправка…' : 'Отправить'}
+        </button>
       )}
     </main>
   );
