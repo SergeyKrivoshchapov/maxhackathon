@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 
 export function OpenInMax() {
-  const maxUrl = process.env.NEXT_PUBLIC_MAX_BOT_URL ?? 'https://max.ru/';
+  const maxUrl = process.env.NEXT_PUBLIC_MAX_BOT_URL ?? 'https://web.max.ru/484336500';
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {

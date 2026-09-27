@@ -33,44 +33,73 @@ export function MaxProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    console.log('[MAX] useEffect started');
 
     const init = async () => {
+      console.log('[MAX] init start');
       const w = (window as any).WebApp;
-      if (!w) return setTimeout(init, 100);
+      console.log('[MAX] WebApp exists:', !!w);
 
-      w.ready?.();
-      w.expand?.();
-      w.disableVerticalSwipes?.();
-
-      applyTheme(w);
-      w.onEvent?.('themeChanged', () => applyTheme(w));
-
-      setWa(w);
-
-      const initData = w.initData;
-      if (initData) {
-        try {
-          const res = await fetch('/api/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData }),
-            credentials: 'include',
-          });
-          const data = await res.json();
-          if (!cancelled && data.ok) setProfile(data.profile);
-        } catch (e) {
-          console.error('auth failed', e);
-        }
+      if (!w) {
+        console.log('[MAX] SDK not loaded, retry');
+        return setTimeout(init, 100);
       }
-      else {
+
+      console.log('[MAX] initData length:', w.initData?.length ?? 0);
+
+      try {
+        w.ready?.();
+        w.expand?.();
+        setWa(w);
+        console.log('[MAX] wa set');
+
+        if (!w.initData) {
+          console.log('[MAX] no initData — not in MAX');
+          return;
+        }
+
+        console.log('[MAX] calling /api/auth');
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: w.initData }),
+          credentials: 'include',
+        });
+        console.log('[MAX] /api/auth status:', res.status);
+
+        const data = await res.json().catch((e) => {
+          console.log('[MAX] json parse failed:', e);
+          return {};
+        });
+        console.log('[MAX] /api/auth data:', data);
+
+        if (data?.ok) {
+          setProfile(data.profile);
+          console.log('[MAX] profile set');
+        }
+      } catch (e) {
+        console.error('[MAX] init failed:', e);
+      } finally {
+        console.log('[MAX] finally, setting ready');
         if (!cancelled) setReady(true);
-        return;
       }
     };
 
     init();
-    return () => { cancelled = true; };
-  }, [applyTheme]);
+
+    // страховка: через 5 секунд всё равно показать UI
+    const t = setTimeout(() => {
+      if (!cancelled) {
+        console.log('[MAX] hard timeout, forcing ready');
+        setReady(true);
+      }
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, []);
   const inMax = !!wa?.initData;
 
   return <MaxCtx.Provider value={{ wa, profile, ready, inMax }}>{children}</MaxCtx.Provider>;
