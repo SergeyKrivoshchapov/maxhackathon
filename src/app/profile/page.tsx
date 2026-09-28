@@ -61,7 +61,7 @@ export default function ProfilePage() {
       {profile && (
         <Card>
           <div style={{ fontSize: 16, fontWeight: 600 }}>
-            {profile.firstName} {profile.lastName}
+            {profile.firstName ?? 'Житель'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 4 }}>
             Роль: {profile.role === 'resident' ? 'Житель' :
