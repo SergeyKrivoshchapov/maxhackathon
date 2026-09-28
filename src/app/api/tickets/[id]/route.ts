@@ -1,8 +1,15 @@
+// src/app/api/tickets/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { eq, asc } from 'drizzle-orm';
 import { db } from '@/db';
 import {
-  tickets, ticketMessages, ticketEvents, profiles, categories,
+  tickets,
+  ticketMessages,
+  ticketEvents,
+  profiles,
+  categories,
+  premises,
+  houses,
 } from '@/db/schema';
 import { getProfileFromRequest } from '@/lib/max-auth';
 
@@ -10,12 +17,14 @@ export const runtime = 'nodejs';
 
 export async function GET(
   _: NextRequest,
-  { params }: { params: Promise<{ id: string }> }   // ← Promise
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;                       // ← await
+  const { id } = await params;
 
-  const profile = await getProfileFromRequest();     // ← без req
-  if (!profile) return NextResponse.json({ error: 'unauth' }, { status: 401 });
+  const profile = await getProfileFromRequest();
+  if (!profile) {
+    return NextResponse.json({ error: 'unauth' }, { status: 401 });
+  }
 
   const [ticket] = await db
     .select({
@@ -27,15 +36,32 @@ export async function GET(
       photos: tickets.photos,
       createdAt: tickets.createdAt,
       slaDeadline: tickets.slaDeadline,
+      closedAt: tickets.closedAt,
       authorId: tickets.authorId,
+      assigneeId: tickets.assigneeId,
       categoryName: categories.name,
+      categoryCode: categories.code,
+      // ← адрес
+      premiseId: tickets.premiseId,
+      premiseNumber: premises.number,
+      houseId: houses.id,
+      houseAddress: houses.address,
     })
     .from(tickets)
     .leftJoin(categories, eq(tickets.categoryId, categories.id))
+    .leftJoin(premises, eq(tickets.premiseId, premises.id))
+    .leftJoin(houses, eq(premises.houseId, houses.id))
     .where(eq(tickets.id, id));
 
-  if (!ticket) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  if (ticket.authorId !== profile.id && profile.role === 'resident') {
+  if (!ticket) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+
+  // Доступ: автор или staff
+  const isAuthor = ticket.authorId === profile.id;
+  const isStaff = ['uk', 'admin', 'contractor'].includes(profile.role);
+
+  if (!isAuthor && !isStaff) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
@@ -46,6 +72,7 @@ export async function GET(
       attachments: ticketMessages.attachments,
       isSystem: ticketMessages.isSystem,
       createdAt: ticketMessages.createdAt,
+      authorId: ticketMessages.authorId,
       authorName: profiles.firstName,
     })
     .from(ticketMessages)
@@ -59,5 +86,9 @@ export async function GET(
     .where(eq(ticketEvents.ticketId, id))
     .orderBy(asc(ticketEvents.createdAt));
 
-  return NextResponse.json({ ticket, messages: msgs, events });
+  return NextResponse.json({
+    ticket,
+    messages: msgs,
+    events,
+  });
 }

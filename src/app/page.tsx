@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { OpenInMax } from '@/components/OpenInMax';
+import { usePolling } from '@/hooks/usePolling';
 
 type Ticket = {
   id: string;
@@ -40,6 +41,21 @@ export default function HomePage() {
     load().finally(() => setLoading(false));
   }, [ready, load]);
 
+  const [myPremises, setMyPremises] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    if (!ready || !inMax) return;
+    fetch('/api/my/premises', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMyPremises(Array.isArray(d) ? d : []));
+  }, [ready, inMax]);
+
+  useEffect(() => {
+    if (myPremises && myPremises.length === 0) {
+      router.replace('/onboarding');
+    }
+  }, [myPremises, router]);
+
   // Нативная кнопка — только если клиент её поддерживает
   useMainButton({
     text: 'Новое обращение',
@@ -50,9 +66,14 @@ export default function HomePage() {
     },
   });
 
+  usePolling(load, 15000, ready && inMax);
+
   if (!ready) return <Spinner />;
 
   if (!inMax) return <OpenInMax />;
+
+  if (myPremises === null) return <Spinner />;
+  if (myPremises.length === 0) return <Spinner />;
 
   return (
     <main
@@ -66,8 +87,16 @@ export default function HomePage() {
       }}
     >
       {profile && (
-        <div style={{ fontSize: 14, color: 'var(--hint)', padding: '12px 0 8px' }}>
-          Привет, {profile.firstName ?? 'житель'}
+        <div
+          onClick={() => router.push('/profile')}
+          style={{
+            fontSize: 14, color: 'var(--hint)',
+            padding: '12px 0 8px', cursor: 'pointer',
+            display: 'flex', justifyContent: 'space-between',
+          }}
+        >
+          <span>Привет, {profile.firstName ?? 'житель'}</span>
+          <span>→</span>
         </div>
       )}
 

@@ -1,59 +1,46 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useMax } from '@/components/providers/MaxProvider';
 import { useMainButton } from '@/hooks/useMainButton';
 import { useBackButton } from '@/hooks/useBackButton';
 import { useHaptic } from '@/hooks/useHaptic';
-import { useMax } from '@/components/providers/MaxProvider';
+import { usePolling } from '@/hooks/usePolling';
 import { Spinner } from '@/components/ui/Spinner';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Textarea } from '@/components/ui/TextArea';
-
-type Data = {
-  ticket: {
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    categoryName: string | null;
-    photos: string[] | null;
-    createdAt: string;
-    slaDeadline: string | null;
-  };
-  messages: Array<{
-    id: string;
-    body: string;
-    authorName: string | null;
-    createdAt: string;
-    isSystem: boolean | null;
-  }>;
-};
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { wa, ready } = useMax();
+  const { wa, ready, inMax } = useMax();
   const haptic = useHaptic();
 
-  const [data, setData] = useState<Data | null>(null);
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
-    const r = await fetch(`/api/tickets/${id}`, { credentials: 'include' });
-    if (r.ok) setData(await r.json());
-    else if (r.status === 404) router.replace('/');
-  }, [id, router]);
+    try {
+      const r = await fetch(`/api/tickets/${id}`, { credentials: 'include' });
+      if (r.ok) {
+        const next = await r.json();
+        setData(next);
+      }
+    } catch (e) {
+      console.error('[poll] load failed', e);
+    }
+  }, [id]);
 
+  // первичная загрузка + polling каждые 10 сек
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!ready) return;
-      load().finally(() => setLoading(false));
-    });
-    return () => clearTimeout(timer);
-  }, [ready, load]);
+    if (!ready || !inMax) return;
+    load().finally(() => setLoading(false));
+  }, [ready, inMax, load]);
+
+  usePolling(load, 10000, ready && inMax);
 
   useBackButton(() => router.back());
 
@@ -81,9 +68,11 @@ export default function TicketPage() {
     }
   }, [text, sending, id, haptic, load, wa]);
 
+  const hasNativeButton = !!wa?.MainButton;
+
   useMainButton({
     text: 'Отправить сообщение',
-    visible: !!wa?.initData && !!text.trim(),
+    visible: inMax && hasNativeButton && !!text.trim(),
     enabled: !!text.trim() && !sending,
     progress: sending,
     onClick: send,
@@ -91,12 +80,11 @@ export default function TicketPage() {
 
   if (!ready || loading) return <Spinner />;
 
-  if (!wa?.initData) {
+  if (!inMax) {
     return (
       <div style={{ textAlign: 'center', padding: 60 }}>
         <div style={{ fontSize: 48 }}>📱</div>
         <h2>Откройте через MAX</h2>
-        <p style={{ color: 'var(--hint)' }}>Приложение работает внутри MAX.</p>
       </div>
     );
   }
@@ -110,7 +98,15 @@ export default function TicketPage() {
     new Date(ticket.slaDeadline) < new Date();
 
   return (
-    <main className="screen" style={{ padding: '8px 16px' }}>
+    <main
+      className="screen"
+      style={{
+        padding: '8px 16px',
+        paddingBottom: hasNativeButton
+          ? 16
+          : 'calc(90px + env(safe-area-inset-bottom, 0))',
+      }}
+    >
       <h2 style={{ margin: '8px 0 12px', fontSize: 20 }}>{ticket.title}</h2>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
@@ -133,15 +129,30 @@ export default function TicketPage() {
 
       {ticket.description && <Card>{ticket.description}</Card>}
 
-      {!!ticket.photos?.length && (
+      {ticket.houseAddress && (
+        <div
+          style={{
+            fontSize: 13,
+            color: 'var(--hint)',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <span>📍</span>
+          <span>
+            {ticket.houseAddress}
+            {ticket.premiseNumber && `, кв. ${ticket.premiseNumber}`}
+          </span>
+        </div>
+      )}
+      
+      {ticket.photos?.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          {ticket.photos.map((u) => (
-            <img
-              key={u}
-              src={u}
-              alt=""
-              style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8 }}
-            />
+          {ticket.photos.map((u: string) => (
+            <img key={u} src={u} alt=""
+              style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8 }} />
           ))}
         </div>
       )}
@@ -154,7 +165,7 @@ export default function TicketPage() {
         </div>
       )}
 
-      {messages.map((m) => (
+      {messages.map((m: any) => (
         <Card key={m.id}>
           <div style={{ fontSize: 12, color: 'var(--hint)', marginBottom: 4 }}>
             {m.authorName ?? 'Система'} · {new Date(m.createdAt).toLocaleString('ru-RU')}
@@ -170,6 +181,25 @@ export default function TicketPage() {
         onChange={(e) => setText(e.target.value)}
         placeholder="Сообщение…"
       />
+
+      {!hasNativeButton && (
+        <button
+          onClick={send}
+          disabled={!text.trim() || sending}
+          style={{
+            position: 'fixed',
+            left: 16, right: 16,
+            bottom: 'calc(16px + env(safe-area-inset-bottom, 0))',
+            padding: 16, border: 'none', borderRadius: 12,
+            background: 'var(--button, #2481cc)',
+            color: '#fff', fontSize: 16, fontWeight: 600,
+            opacity: (!text.trim() || sending) ? 0.5 : 1,
+            zIndex: 100,
+          }}
+        >
+          {sending ? 'Отправка…' : 'Отправить'}
+        </button>
+      )}
     </main>
   );
 }

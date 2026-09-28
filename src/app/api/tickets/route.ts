@@ -22,7 +22,7 @@ const createTicketSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   categoryId: z.number().int(),
-  premiseId: z.string().uuid().optional(),
+  premiseId: z.string().uuid(),
   priority: z.enum(['low', 'normal', 'high', 'emergency']).default('normal'),
   photos: z.array(z.string().url()).optional(),
 });

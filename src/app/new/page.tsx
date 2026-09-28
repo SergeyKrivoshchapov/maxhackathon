@@ -56,6 +56,20 @@ export default function NewTicketPage() {
     };
   }, []);
 
+  const [myPremises, setMyPremises] = useState<any[]>([]);
+  const [premiseId, setPremiseId] = useState('');
+
+  useEffect(() => {
+    fetch('/api/my/premises', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setMyPremises(d);
+          if (d.length > 0) setPremiseId(d[0].premiseId); // первое по умолчанию
+        }
+      });
+  }, []);
+
   // ─── Нативные кнопки ───────────────────────────────────────
   useBackButton(() => router.back());
 
@@ -74,6 +88,7 @@ export default function NewTicketPage() {
           description: desc.trim() || null,
           photos,
           priority,
+          premiseId
         }),
         credentials: 'include',
       });
@@ -175,6 +190,15 @@ export default function NewTicketPage() {
           : 'calc(90px + env(safe-area-inset-bottom, 0))',
       }}
     >
+      <div className="section-title">Адрес</div>
+      <Select value={premiseId} onChange={(e) => setPremiseId(e.target.value)}>
+        {myPremises.map((p) => (
+          <option key={p.premiseId} value={p.premiseId}>
+            {p.houseAddress}, кв. {p.premiseNumber}
+          </option>
+        ))}
+      </Select>
+
       <div className="section-title">Категория</div>
       <Select
         value={catId ?? ''}
