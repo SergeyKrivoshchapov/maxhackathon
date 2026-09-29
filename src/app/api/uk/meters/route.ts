@@ -1,8 +1,9 @@
-// src/app/api/uk/meters/route.ts
 import { NextResponse } from 'next/server';
-import { eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { meters, premises, houses } from '@/db/schema';
+import {
+  meters, meterReadings, premises, houses, profiles,
+} from '@/db/schema';
 import { getProfileFromRequest } from '@/lib/max-auth';
 
 export const runtime = 'nodejs';
@@ -35,7 +36,7 @@ export async function GET() {
   const premiseIds = myPremises.map((p) => p.id);
   if (premiseIds.length === 0) return NextResponse.json([]);
 
-  const rows = await db
+  const meterRows = await db
     .select({
       id: meters.id,
       type: meters.type,
@@ -47,26 +48,99 @@ export async function GET() {
     .from(meters)
     .leftJoin(premises, eq(meters.premiseId, premises.id))
     .leftJoin(houses, eq(premises.houseId, houses.id))
-    .where(inArray(meters.premiseId, premiseIds))
-    .limit(500);
+    .where(inArray(meters.premiseId, premiseIds));
 
-  // Группировка по дому → квартире
-  const grouped: Record<string, any> = {};
-  for (const r of rows) {
-    const key = `${r.houseAddress}|${r.premiseNumber}`;
-    if (!grouped[key]) {
-      grouped[key] = {
-        houseAddress: r.houseAddress,
-        premiseNumber: r.premiseNumber,
-        meters: [],
-      };
+  // Загрузить последние показания для всех счётчиков
+  const meterIds = meterRows.map((m) => m.id);
+  const lastReadings: Record<string, any> = {};
+
+  if (meterIds.length > 0) {
+    // Получаем все показания, сортируем по дате, оставляем первые
+    const readings = await db
+      .select({
+        meterId: meterReadings.meterId,
+        value: meterReadings.value,
+        readingDate: meterReadings.readingDate,
+        authorName: profiles.firstName,
+      })
+      .from(meterReadings)
+      .leftJoin(profiles, eq(meterReadings.authorId, profiles.id))
+      .where(inArray(meterReadings.meterId, meterIds))
+      .orderBy(desc(meterReadings.readingDate));
+
+    for (const r of readings) {
+      if (!lastReadings[r.meterId]) lastReadings[r.meterId] = r;
     }
-    grouped[key].meters.push({
-      id: r.id,
-      type: r.type,
-      unit: r.unit,
-    });
   }
 
-  return NextResponse.json(Object.values(grouped));
+  // Собираем по квартире
+  const now = new Date();
+  const DAY = 86400_000;
+
+  const premisesMap: Record<string, any> = {};
+
+  for (const m of meterRows) {
+    const key = m.premiseId;
+    if (!premisesMap[key]) {
+      premisesMap[key] = {
+        premiseId: m.premiseId,
+        premiseNumber: m.premiseNumber,
+        houseAddress: m.houseAddress,
+        meters: [],
+        lastReadingDate: null,
+        status: 'ok' as 'ok' | 'warning' | 'stale',
+      };
+    }
+
+    const last = lastReadings[m.id];
+    const daysSince = last
+      ? Math.floor((now.getTime() - new Date(last.readingDate).getTime()) / DAY)
+      : null;
+
+    let meterStatus: 'ok' | 'warning' | 'stale' = 'ok';
+    if (daysSince == null) meterStatus = 'stale';
+    else if (daysSince > 60) meterStatus = 'stale';
+    else if (daysSince > 35) meterStatus = 'warning';
+
+    premisesMap[key].meters.push({
+      id: m.id,
+      type: m.type,
+      unit: m.unit,
+      lastValue: last?.value ?? null,
+      lastDate: last?.readingDate ?? null,
+      lastAuthor: last?.authorName ?? null,
+      daysSince,
+      status: meterStatus,
+    });
+
+    // Обновляем худший статус квартиры
+    if (meterStatus === 'stale') premisesMap[key].status = 'stale';
+    else if (meterStatus === 'warning' && premisesMap[key].status === 'ok') {
+      premisesMap[key].status = 'warning';
+    }
+
+    // Обновляем самую свежую дату
+    if (last && (!premisesMap[key].lastReadingDate ||
+        new Date(last.readingDate) > new Date(premisesMap[key].lastReadingDate))) {
+      premisesMap[key].lastReadingDate = last.readingDate;
+    }
+  }
+
+  // Сортируем: сначала просроченные, потом по адресу
+  const result = Object.values(premisesMap).sort((a: any, b: any) => {
+    const order = { stale: 0, warning: 1, ok: 2 };
+    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+    return a.houseAddress.localeCompare(b.houseAddress) ||
+           a.premiseNumber.localeCompare(b.premiseNumber);
+  });
+
+  // Сводка
+  const summary = {
+    total: result.length,
+    stale: result.filter((p: any) => p.status === 'stale').length,
+    warning: result.filter((p: any) => p.status === 'warning').length,
+    ok: result.filter((p: any) => p.status === 'ok').length,
+  };
+
+  return NextResponse.json({ summary, premises: result });
 }
