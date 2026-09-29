@@ -49,7 +49,6 @@ export async function POST(req: NextRequest) {
     await db
       .update(houses)
       .set({ ukId: profile.id })
-      .where(isNull(houses.ukId));
   } else {
     // Отвязать дома, где этот УК был назначен
     await db
