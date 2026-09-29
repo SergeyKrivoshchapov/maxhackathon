@@ -8,6 +8,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { usePolling } from '@/hooks/usePolling';
+import { UKStats } from '@/components/ui/UKStats';
+import { Select } from '@/components/ui/Select';
 
 type Ticket = {
   id: string;
@@ -35,6 +37,7 @@ export default function UKPage() {
   const { ready, inMax, profile } = useMax();
   const haptic = useHaptic();
 
+  const [sort, setSort] = useState<'new' | 'sla' | 'priority'>('new');
   const [items, setItems] = useState<Ticket[]>([]);
   const [filter, setFilter] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
@@ -47,6 +50,7 @@ export default function UKPage() {
     const params = new URLSearchParams();
     if (filter) params.set('status', filter);
     if (overdueOnly) params.set('overdue', '1');
+    if (sort) params.set('sort', sort);
 
     const r = await fetch(`/api/uk/tickets?${params}`, {
       credentials: 'include',
@@ -63,6 +67,25 @@ export default function UKPage() {
     load();
   }, [ready, load]);
 
+  const quickAction = async (ticketId: string, status: string) => {
+    try {
+      await fetch(`/api/uk/tickets/${ticketId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+        credentials: 'include',
+      });
+      haptic.success();
+      load();
+    } catch (e) {
+      haptic.error();
+    }
+  };
+
+  const acceptTicket = (id: string) => quickAction(id, 'accepted');
+  const startTicket = (id: string) => quickAction(id, 'in_progress');
+  const closeTicket = (id: string) => quickAction(id, 'done');
+
   if (!ready) return <Spinner />;
 
   if (!inMax || !['uk', 'admin', 'contractor'].includes(profile?.role ?? '')) {
@@ -77,6 +100,7 @@ export default function UKPage() {
   return (
     <main className="screen" style={{ padding: '8px 16px' }}>
       <h1 style={{ fontSize: 20, margin: '12px 0' }}>Очередь обращений</h1>
+      <UKStats />
 
       {/* Фильтры */}
       <div style={{
@@ -107,6 +131,11 @@ export default function UKPage() {
           </button>
         ))}
       </div>
+      <Select value={sort} onChange={(e) => setSort(e.target.value as any)}>
+        <option value="new">Сначала новые</option>
+        <option value="sla">Сначала по SLA</option>
+        <option value="priority">Сначала важные</option>
+      </Select>
 
       <label style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -146,6 +175,45 @@ export default function UKPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <strong style={{ fontSize: 15, flex: 1 }}>{t.title}</strong>
               <StatusBadge status={t.status} />
+            </div>
+            {/* Быстрые действия */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              {t.status === 'new' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    acceptTicket(t.id);
+                  }}
+                  style={{
+                    flex: 1, padding: 8,
+                    borderRadius: 8, border: 'none',
+                    background: 'var(--button)',
+                    color: '#fff', fontSize: 13,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Принять
+                </button>
+              )}
+
+              {t.status === 'accepted' && (
+                <button onClick={(e) => { e.stopPropagation(); startTicket(t.id); }}>
+                  В работу
+                </button>
+              )}
+
+              {t.status === 'in_progress' && (
+                <button onClick={(e) => { e.stopPropagation(); closeTicket(t.id); }}>
+                  Выполнено
+                </button>
+              )}
+
+              <button
+                onClick={(e) => { e.stopPropagation(); router.push(`/uk/ticket/${t.id}`); }}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid var(--separator)', background: 'transparent' }}
+              >
+                Открыть
+              </button>
             </div>
             <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 6 }}>
               {t.houseAddress ?? '—'}, кв. {t.premiseNumber ?? '—'}
