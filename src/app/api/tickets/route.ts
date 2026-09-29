@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
   // 7. Уведомление автору
   if (profile.maxUserId) {
     await notifyUser(
-      profile.maxUserId.toString(),
+      profile.id,
       `Заявка «${title}» зарегистрирована. Срок — ${category.defaultSlaHours ?? 24} ч.`
     );
   }

@@ -2,7 +2,13 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { profiles } from '@/db/schema';
 
+// ─── Низкоуровневая отправка в MAX по maxUserId ────────────
 async function sendMaxMessage(maxUserId: number, text: string) {
+  if (!process.env.MAX_BOT_TOKEN) {
+    console.warn('[notify] MAX_BOT_TOKEN not set');
+    return;
+  }
+
   try {
     const res = await fetch(
       `https://botapi.max.ru/messages?access_token=${process.env.MAX_BOT_TOKEN}&user_id=${maxUserId}`,
@@ -13,14 +19,31 @@ async function sendMaxMessage(maxUserId: number, text: string) {
       }
     );
     if (!res.ok) {
-      console.warn('[notify] MAX API failed', res.status);
+      const body = await res.text().catch(() => '');
+      console.warn('[notify] MAX API failed', res.status, body);
     }
   } catch (e) {
     console.error('[notify] send failed', e);
   }
 }
 
+// ─── Публичная функция: принимает profileId (UUID) ─────────
 export async function notifyUser(profileId: string, text: string) {
+  if (!profileId) return;
+
+  // защита от случайной передачи maxUserId вместо profileId
+  const looksLikeUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profileId);
+
+  if (!looksLikeUuid) {
+    console.error(
+      '[notify] BUG: notifyUser called with non-UUID:',
+      profileId,
+      '— should be profileId, not maxUserId'
+    );
+    return;
+  }
+
   const [p] = await db
     .select({ maxUserId: profiles.maxUserId })
     .from(profiles)
@@ -30,6 +53,14 @@ export async function notifyUser(profileId: string, text: string) {
   await sendMaxMessage(p.maxUserId, text);
 }
 
+// ─── Прямая отправка по maxUserId (когда он уже есть) ──────
+export async function notifyMaxUserId(maxUserId: number, text: string) {
+  if (!maxUserId || maxUserId <= 0) return;
+  await sendMaxMessage(maxUserId, text);
+}
+
+// ─── Шаблоны ───────────────────────────────────────────────
+
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая',
   accepted: 'Принята',
@@ -38,6 +69,17 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: 'Отклонена',
   escalated: 'Эскалирована',
 };
+
+export async function notifyTicketCreated(
+  profileId: string,
+  ticketTitle: string,
+  slaHours: number
+) {
+  await notifyUser(
+    profileId,
+    `✅ Заявка «${ticketTitle}» зарегистрирована. Срок — ${slaHours} ч.`
+  );
+}
 
 export async function notifyTicketStatusChanged(
   profileId: string,
