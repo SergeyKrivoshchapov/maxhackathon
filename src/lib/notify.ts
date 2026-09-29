@@ -114,3 +114,14 @@ export async function notifyAssigned(
   if (address) text += `\n📍 ${address}`;
   await notifyUser(profileId, text);
 }
+
+export async function notifySlaWarning(
+  profileId: string,
+  ticketTitle: string,
+  hoursLeft: number
+) {
+  await notifyUser(
+    profileId,
+    `⏰ По заявке «${ticketTitle}» осталось ${hoursLeft} ч до SLA`
+  );
+}

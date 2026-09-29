@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { usePolling } from '@/hooks/usePolling';
 import { UKStats } from '@/components/ui/UKStats';
 import { Select } from '@/components/ui/Select';
+import { useDialog } from '@/hooks/useDialog';
 
 type Ticket = {
   id: string;
@@ -81,7 +82,7 @@ export default function UKPage() {
       haptic.error();
     }
   };
-
+  const dialog = useDialog();
   const acceptTicket = (id: string) => quickAction(id, 'accepted');
   const startTicket = (id: string) => quickAction(id, 'in_progress');
   const closeTicket = (id: string) => quickAction(id, 'done');
@@ -100,6 +101,40 @@ export default function UKPage() {
   return (
     <main className="screen" style={{ padding: '8px 16px' }}>
       <h1 style={{ fontSize: 20, margin: '12px 0' }}>Очередь обращений</h1>
+      <button
+        onClick={async () => {
+          haptic.tap();
+          const res = await fetch('/api/uk/tickets/export', { credentials: 'include' });
+          if (!res.ok) {
+            await dialog.alert('Не удалось скачать файл');
+            return;
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }}
+        style={{
+          width: '100%',
+          padding: 12,
+          marginBottom: 12,
+          borderRadius: 10,
+          border: '1px solid var(--separator)',
+          background: 'transparent',
+          color: 'var(--text)',
+          fontSize: 14,
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        📥 Скачать CSV
+      </button>
       <button
         onClick={() => router.push('/uk/map')}
         style={{

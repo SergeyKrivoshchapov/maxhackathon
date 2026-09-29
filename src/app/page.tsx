@@ -89,6 +89,10 @@ export default function HomePage() {
     >
       <ProfileLink />
 
+      <button onClick={() => router.push('/meters')}>
+        📊 Показания счётчиков
+      </button>
+
       {loading && <Spinner />}
 
       {!loading && items.length === 0 && (

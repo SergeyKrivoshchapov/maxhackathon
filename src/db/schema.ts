@@ -129,3 +129,35 @@ export const ticketMessagesRelations = relations(ticketMessages, ({ one }) => ({
   ticket: one(tickets, { fields: [ticketMessages.ticketId], references: [tickets.id] }),
   author: one(profiles, { fields: [ticketMessages.authorId], references: [profiles.id] }),
 }));
+
+
+
+// Счетчики
+export const meterTypeEnum = pgEnum('meter_type', [
+  'water_cold', 'water_hot', 'electricity', 'gas', 'heating',
+]);
+
+export const meters = pgTable('meters', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  premiseId: uuid('premise_id').notNull().references(() => premises.id, { onDelete: 'cascade' }),
+  type: meterTypeEnum('type').notNull(),
+  serialNumber: text('serial_number'),
+  unit: text('unit').default('м³'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const meterReadings = pgTable('meter_readings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  meterId: uuid('meter_id').notNull().references(() => meters.id, { onDelete: 'cascade' }),
+  value: numeric('value', { precision: 12, scale: 3 }).notNull(),
+  readingDate: timestamp('reading_date', { withTimezone: true }).notNull().defaultNow(),
+  authorId: uuid('author_id').notNull().references(() => profiles.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxMeterDate: index('meter_readings_meter_date_idx').on(t.meterId, t.readingDate),
+}));
+
+export const metersRelations = relations(meters, ({ one, many }) => ({
+  premise: one(premises, { fields: [meters.premiseId], references: [premises.id] }),
+  readings: many(meterReadings),
+}));

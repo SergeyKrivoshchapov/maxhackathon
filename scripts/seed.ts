@@ -9,6 +9,7 @@ import {
   premises,
   categories,
   residencies,
+  meters,
 } from '../src/db/schema';
 
 // ─── Утилита: логирование ──────────────────────────────────
@@ -176,6 +177,45 @@ async function seedTestResidency(residentId?: string) {
   log(`✅ Тестовый житель привязан к ${firstHouse.address}, кв. ${firstPremise.number}`);
 }
 
+// ─── 5. Счётчики ← НОВАЯ ФУНКЦИЯ ───────────────────────────
+async function seedMeters() {
+  section('Счётчики');
+
+  // Проверяем, сколько уже есть
+  const existing = await db.select({ count: sql<number>`count(*)` }).from(meters);
+  const current = Number(existing[0]?.count ?? 0);
+
+  if (current >= 300) {
+    log(`✅ ${current} счётчиков (уже созданы)`);
+    return;
+  }
+
+  const allPremises = await db.select({ id: premises.id }).from(premises);
+  if (allPremises.length === 0) {
+    log('⚠️ Квартир нет, пропускаем');
+    return;
+  }
+
+  const meterData: any[] = [];
+  for (const p of allPremises) {
+    meterData.push(
+      { premiseId: p.id, type: 'water_cold' as const, unit: 'м³' },
+      { premiseId: p.id, type: 'water_hot' as const, unit: 'м³' },
+      { premiseId: p.id, type: 'electricity' as const, unit: 'кВт·ч' }
+    );
+  }
+
+  // Пакетами по 500, чтобы не перегрузить запрос
+  let created = 0;
+  for (let i = 0; i < meterData.length; i += 500) {
+    const batch = meterData.slice(i, i + 500);
+    await db.insert(meters).values(batch).onConflictDoNothing();
+    created += batch.length;
+  }
+
+  log(`✅ ${created} счётчиков создано (${allPremises.length} помещений × 3)`);
+}
+
 // ─── MAIN ──────────────────────────────────────────────────
 async function main() {
   console.log('========================================');
@@ -187,6 +227,7 @@ async function main() {
     const profs = await seedProfiles();
     await seedHouses(profs.uk1?.id, profs.uk2?.id);
     await seedPremises();
+    await seedMeters();
     await seedTestResidency(profs.resident?.id);
 
     console.log('\n========================================');
