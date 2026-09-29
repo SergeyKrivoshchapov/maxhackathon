@@ -25,6 +25,8 @@ const createTicketSchema = z.object({
   premiseId: z.string().uuid(),
   priority: z.enum(['low', 'normal', 'high', 'emergency']).default('normal'),
   photos: z.array(z.string().url()).optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
 });
 
 // ─── GET /api/tickets ───────────────────────────────────────
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { title, description, categoryId, premiseId, priority, photos } =
+  const { title, description, categoryId, premiseId, priority, photos, lat, lng } =
     parsed.data;
 
   // 2. Проверка прав на помещение
@@ -144,6 +146,8 @@ export async function POST(req: NextRequest) {
         priority,
         slaDeadline,
         status: 'new',
+        lat: lat != null ? String(lat) : null, 
+        lng: lng != null ? String(lng) : null,
       })
       .returning();
 

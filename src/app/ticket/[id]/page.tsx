@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Textarea } from '@/components/ui/TextArea';
+import { PhotoGrid } from '@/components/ui/PhotoGrid';
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +22,7 @@ export default function TicketPage() {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -148,14 +150,7 @@ export default function TicketPage() {
         </div>
       )}
       
-      {ticket.photos?.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          {ticket.photos.map((u: string) => (
-            <img key={u} src={u} alt=""
-              style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8 }} />
-          ))}
-        </div>
-      )}
+      <PhotoGrid urls={ticket.photos ?? []} columns={3} />
 
       <div className="section-title">Сообщения</div>
 
@@ -170,6 +165,7 @@ export default function TicketPage() {
           <div style={{ fontSize: 12, color: 'var(--hint)', marginBottom: 4 }}>
             {m.authorName ?? 'Система'} · {new Date(m.createdAt).toLocaleString('ru-RU')}
           </div>
+          <PhotoGrid urls={m.attachments ?? []} columns={3} />
           <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
         </Card>
       ))}

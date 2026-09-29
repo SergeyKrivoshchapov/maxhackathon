@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { OpenInMax } from '@/components/OpenInMax';
 import { usePolling } from '@/hooks/usePolling';
+import { ProfileLink } from '@/components/ProfileLink';
 
 type Ticket = {
   id: string;
@@ -86,19 +87,7 @@ export default function HomePage() {
           : 'calc(90px + env(safe-area-inset-bottom, 0))',
       }}
     >
-      {profile && (
-        <div
-          onClick={() => router.push('/profile')}
-          style={{
-            fontSize: 14, color: 'var(--hint)',
-            padding: '12px 0 8px', cursor: 'pointer',
-            display: 'flex', justifyContent: 'space-between',
-          }}
-        >
-          <span>Привет, {profile.firstName ?? 'житель'}</span>
-          <span>→</span>
-        </div>
-      )}
+      <ProfileLink />
 
       {loading && <Spinner />}
 

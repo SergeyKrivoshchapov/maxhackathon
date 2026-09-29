@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/TextArea';
+import { PhotoGrid } from '@/components/ui/PhotoGrid';
 
 const STATUS_OPTIONS = [
   { value: 'accepted', label: 'Принята' },
@@ -114,7 +115,7 @@ export default function UKTicketPage() {
 
       {ticket.description && <Card>{ticket.description}</Card>}
 
-    {ticket.houseAddress && (
+      {ticket.houseAddress && (
         <div
             style={{
             background: 'var(--bg-secondary)',
@@ -128,14 +129,9 @@ export default function UKTicketPage() {
             📍 {ticket.houseAddress}
             {ticket.premiseNumber && `, кв. ${ticket.premiseNumber}`}
         </div>
-        )}
-      {ticket.photos?.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          {ticket.photos.map((u: string) => (
-            <img key={u} src={u} alt="" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8 }} />
-          ))}
-        </div>
       )}
+      
+      <PhotoGrid urls={ticket.photos ?? []} columns={3} />
 
       <div className="section-title">Назначить исполнителя</div>
       <Select
@@ -184,6 +180,7 @@ export default function UKTicketPage() {
           <div style={{ fontSize: 12, color: 'var(--hint)', marginBottom: 4 }}>
             {m.authorName ?? 'Система'} · {new Date(m.createdAt).toLocaleString('ru-RU')}
           </div>
+          <PhotoGrid urls={m.attachments ?? []} columns={3} />
           <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
         </Card>
       ))}

@@ -12,6 +12,8 @@ import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import { PhotoUploader } from '@/components/ui/PhotoUploader';
+import { MSG } from '@/lib/messages';
+import { LocationPicker } from '@/components/ui/LocationPicker';
 
 type Category = { id: number; name: string; code: string };
 
@@ -28,6 +30,9 @@ export default function NewTicketPage() {
   const [priority, setPriority] = useState<'low' | 'normal' | 'high' | 'emergency'>('normal');
   const [photos, setPhotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
 
   // ─── Загрузка категорий с логами ───────────────────────────
   useEffect(() => {
@@ -89,7 +94,9 @@ export default function NewTicketPage() {
           description: desc.trim() || null,
           photos,
           priority,
-          premiseId
+          premiseId,
+          lat,    
+          lng, 
         }),
         credentials: 'include',
       });
@@ -102,7 +109,15 @@ export default function NewTicketPage() {
       router.push('/');
     } catch (e: any) {
       haptic.error();
-      await dialog.alert(`Ошибка: ${e?.message ?? 'неизвестная'}`);
+      const text = e?.message ?? '';
+      let userMsg = MSG.serverError;
+
+      if (text.includes('401')) userMsg = MSG.sessionExpired;
+      else if (text.includes('premise')) userMsg = MSG.noAddress;
+      else if (text.includes('category')) userMsg = MSG.noCategory;
+      else if (text.includes('fetch')) userMsg = MSG.networkError;
+
+      await dialog.alert(userMsg);
     } finally {
       setBusy(false);
     }
@@ -117,53 +132,6 @@ export default function NewTicketPage() {
     progress: busy,
     onClick: submit,
   });
-
-  // ─── Логика выбора фото ────────────────────────────────────
-  const pickPhoto = useCallback(async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
-
-    input.onchange = async () => {
-      const files = Array.from(input.files ?? []);
-      if (!files.length) return;
-
-      setBusy(true);
-      try {
-        const { supabaseBrowser } = await import('@/lib/supabase');
-        const urls: string[] = [];
-
-        for (const f of files) {
-          const path = `tickets/${crypto.randomUUID()}-${f.name}`;
-          const { error } = await supabaseBrowser.storage
-            .from('ticket-photos')
-            .upload(path, f);
-
-          if (error) {
-            console.error('[new] upload failed:', error);
-            continue;
-          }
-
-          const { data } = supabaseBrowser.storage
-            .from('ticket-photos')
-            .getPublicUrl(path);
-
-          if (data?.publicUrl) urls.push(data.publicUrl);
-        }
-
-        setPhotos((p) => [...p, ...urls]);
-        haptic.tap();
-      } catch (e) {
-        console.error('[new] pickPhoto failed:', e);
-        await dialog.alert('Не удалось загрузить фото');
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    input.click();
-  }, [haptic, dialog]);
 
   // ─── Ранние возвраты — строго ПОСЛЕ всех хуков ─────────────
   if (!ready) return <Spinner />;
@@ -240,6 +208,18 @@ export default function NewTicketPage() {
         <option value="high">Высокий</option>
         <option value="emergency">Аварийный</option>
       </Select>
+      
+      <div className="section-title">Место на карте (опционально)</div>
+      <LocationPicker
+        lat={lat}
+        lng={lng}
+        onChange={(la, ln) => { setLat(la); setLng(ln); }}
+      />
+      {lat != null && lng != null && (
+        <div style={{ fontSize: 12, color: 'var(--hint)', marginTop: 6 }}>
+          📍 Координаты: {lat.toFixed(6)}, {lng.toFixed(6)}
+        </div>
+      )}
 
       <div className="section-title">Фото</div>
       <PhotoUploader
@@ -249,18 +229,6 @@ export default function NewTicketPage() {
         folder="tickets"
         disabled={busy}
       />
-      {photos.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-          {photos.map((u) => (
-            <img
-              key={u}
-              src={u}
-              alt=""
-              style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8 }}
-            />
-          ))}
-        </div>
-      )}
 
       {/* Fallback-кнопка «Отправить», если MainButton нет (веб-MAX) */}
       {!hasNativeButton && (

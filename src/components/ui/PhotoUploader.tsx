@@ -1,42 +1,51 @@
 'use client';
 import { useState } from 'react';
+import { MSG } from '@/lib/messages';
 
 async function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<Blob> {
-  if (!file.type.startsWith('image/')) return file;
-  if (file.type === 'image/heic' || file.type === 'image/heif') return file;
+  const name = (file.name || '').toLowerCase();
+  const type = file.type || '';
+  const isSupported =
+    type === 'image/jpeg' || type === 'image/png' || type === 'image/webp' ||
+    name.endsWith('.jpg') || name.endsWith('.jpeg') ||
+    name.endsWith('.png') || name.endsWith('.webp');
 
-  return new Promise((resolve, reject) => {
+  if (!isSupported) return file;
+
+  return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
 
     img.onload = () => {
       URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
+      try {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
         }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(file);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob ?? file), 'image/jpeg', quality);
+      } catch {
+        resolve(file);
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('no canvas ctx'));
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))),
-        'image/jpeg',
-        quality
-      );
     };
+
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('image load failed'));
+      resolve(file);
     };
+
     img.src = url;
   });
 }
@@ -59,6 +68,7 @@ export function PhotoUploader({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const pick = () => {
     if (disabled || busy) return;
@@ -67,7 +77,6 @@ export function PhotoUploader({
       return;
     }
     setError(null);
-    setProgress(null);
 
     const input = document.createElement('input');
     input.type = 'file';
@@ -76,7 +85,6 @@ export function PhotoUploader({
 
     input.onchange = async () => {
       const files = Array.from(input.files ?? []);
-      console.log('[uploader] files selected:', files.length);
       if (!files.length) return;
 
       setBusy(true);
@@ -85,20 +93,16 @@ export function PhotoUploader({
       try {
         const fd = new FormData();
         const slice = files.slice(0, max - value.length);
-
         let i = 0;
         for (const f of slice) {
           i++;
-          setProgress(`Сжатие ${i}/${slice.length}…`);
+          setProgress(`Обработка ${i}/${slice.length}…`);
           const compressed = await compressImage(f, 1600, 0.8);
-          const name = (f.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
-          // ← ВАЖНО: одно и то же имя поля 'file'
+          const name = (f.name || `photo-${i}`).replace(/\.[^.]+$/, '') + '.jpg';
           fd.append('file', compressed, name);
-          console.log('[uploader] appended', name);
         }
 
         setProgress('Загрузка…');
-
         const res = await fetch('/api/upload', {
           method: 'POST',
           body: fd,
@@ -106,20 +110,17 @@ export function PhotoUploader({
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error ?? `HTTP ${res.status}`);
+          throw new Error(MSG.uploadFailed);
         }
 
         const data = await res.json();
-        console.log('[uploader] response:', data);
-
         if (Array.isArray(data.urls) && data.urls.length) {
-          // ← ВАЖНО: use функциональный setState
           onChange([...value, ...data.urls]);
+        } else {
+          setError(MSG.uploadFailed);
         }
       } catch (e: any) {
-        console.error('[uploader] failed', e);
-        setError(e?.message ?? 'Ошибка загрузки');
+        setError(e?.message ?? MSG.uploadFailed);
       } finally {
         setBusy(false);
         setProgress(null);
@@ -149,7 +150,11 @@ export function PhotoUploader({
           opacity: disabled || busy ? 0.6 : 1,
         }}
       >
-        {busy ? (progress ?? 'Загрузка…') : `+ Добавить фото (${value.length}/${max})`}
+        {busy
+          ? (progress ?? 'Загрузка…')
+          : value.length >= max
+            ? `Загружено максимум (${max})`
+            : `+ Добавить фото (${value.length}/${max})`}
       </button>
 
       {error && (
@@ -159,28 +164,65 @@ export function PhotoUploader({
       )}
 
       {value.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-          {value.map((u) => (
-            <div key={u} style={{ position: 'relative' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+          gap: 8,
+          marginTop: 12,
+        }}>
+          {value.map((u, i) => (
+            <div key={u} style={{ position: 'relative', aspectRatio: '1 / 1' }}>
               <img
                 src={u}
-                alt=""
-                style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8 }}
+                alt={`Фото ${i + 1}`}
+                loading="lazy"
+                onClick={() => setPreviewUrl(u)}
+                style={{
+                  width: '100%', height: '100%',
+                  objectFit: 'cover',
+                  borderRadius: 10,
+                  cursor: 'zoom-in',
+                  border: '1px solid var(--separator, #e5e7eb)',
+                }}
               />
               <button
                 type="button"
                 onClick={() => remove(u)}
                 style={{
                   position: 'absolute', top: -6, right: -6,
-                  width: 22, height: 22, borderRadius: '50%',
-                  border: 'none', background: '#dc2626', color: '#fff',
+                  width: 24, height: 24, borderRadius: '50%',
+                  border: '2px solid var(--bg, #fff)',
+                  background: '#dc2626', color: '#fff',
                   fontSize: 14, cursor: 'pointer', lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
                 ×
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {previewUrl && (
+        <div
+          onClick={() => setPreviewUrl(null)}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.9)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <img
+            src={previewUrl}
+            alt="Просмотр"
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 8 }}
+          />
         </div>
       )}
     </div>
