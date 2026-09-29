@@ -100,6 +100,28 @@ export default function UKPage() {
   return (
     <main className="screen" style={{ padding: '8px 16px' }}>
       <h1 style={{ fontSize: 20, margin: '12px 0' }}>Очередь обращений</h1>
+      <button
+        onClick={() => router.push('/uk/map')}
+        style={{
+          width: '100%',
+          padding: 12,
+          marginBottom: 12,
+          borderRadius: 10,
+          border: '1px solid var(--link, #2481cc)',
+          background: 'rgba(36,129,204,0.08)',
+          color: 'var(--link, #2481cc)',
+          fontSize: 15,
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        🗺 Открыть карту заявок
+      </button>
+      
       <UKStats />
 
       {/* Фильтры */}
