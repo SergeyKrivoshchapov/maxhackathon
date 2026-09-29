@@ -23,6 +23,14 @@ type Meter = {
   unit: string | null;
 };
 
+type Reading = {
+  id: string;
+  value: string;
+  readingDate: string;
+  authorName: string | null;
+  consumption: number | null;
+};
+
 export default function MetersPage() {
   const { ready, inMax, profile } = useMax();
   const haptic = useHaptic();
@@ -30,34 +38,32 @@ export default function MetersPage() {
 
   const [meters, setMeters] = useState<Meter[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [readings, setReadings] = useState<Record<string, Reading[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useBackButton();
 
-  useEffect(() => {
-    if (!ready || !inMax) {
-      console.log('[meters-page] waiting ready/inMax', { ready, inMax });
-      return;
-    }
+  const loadAll = async () => {
+    const m = await fetch('/api/meters', { credentials: 'include' }).then((r) => r.json());
+    if (!Array.isArray(m)) return;
+    setMeters(m);
 
-    console.log('[meters-page] loading meters');
-    fetch('/api/meters', { credentials: 'include' })
-      .then((r) => {
-        console.log('[meters-page] status:', r.status);
-        return r.json();
-      })
-      .then((d) => {
-        console.log('[meters-page] response:', d);
-        if (Array.isArray(d)) setMeters(d);
-        else setError('Неверный формат ответа');
-      })
-      .catch((e) => {
-        console.error('[meters-page] fetch failed:', e);
-        setError(e.message);
-      })
-      .finally(() => setLoading(false));
+    const all: Record<string, Reading[]> = {};
+    for (const meter of m) {
+      const r = await fetch(
+        `/api/meters/readings?meterId=${meter.id}`,
+        { credentials: 'include' }
+      ).then((r) => r.json());
+      if (Array.isArray(r)) all[meter.id] = r;
+    }
+    setReadings(all);
+  };
+
+  useEffect(() => {
+    if (!ready || !inMax) return;
+    loadAll().finally(() => setLoading(false));
   }, [ready, inMax]);
 
   const submit = async (meterId: string) => {
@@ -81,16 +87,12 @@ export default function MetersPage() {
       if (!res.ok) throw new Error(await res.text());
       haptic.success();
       await dialog.alert('Показания переданы');
-
-      // Обновляем список
-      const d = await fetch('/api/meters', { credentials: 'include' }).then((r) => r.json());
-      if (Array.isArray(d)) setMeters(d);
-
       setValues((prev) => {
         const next = { ...prev };
         delete next[meterId];
         return next;
       });
+      await loadAll();
     } catch (e: any) {
       haptic.error();
       await dialog.alert(`Ошибка: ${e.message}`);
@@ -99,79 +101,135 @@ export default function MetersPage() {
     }
   };
 
-  if (!ready || loading) return <Spinner />;
+  const toggle = (meterId: string) => {
+    haptic.tap();
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(meterId)) next.delete(meterId);
+      else next.add(meterId);
+      return next;
+    });
+  };
 
-  if (!inMax) {
-    return <div style={{ padding: 60, textAlign: 'center' }}>Откройте через MAX</div>;
-  }
+  if (!ready || loading) return <Spinner />;
+  if (!inMax) return <div style={{ padding: 60, textAlign: 'center' }}>Откройте через MAX</div>;
 
   return (
     <main className="screen" style={{ padding: '8px 16px' }}>
       <h1 style={{ fontSize: 20, margin: '12px 0' }}>Показания счётчиков</h1>
 
-      {/* Диагностика */}
-      <div style={{
-        fontSize: 11, color: 'var(--hint)',
-        padding: 8, borderRadius: 6,
-        background: 'var(--bg-secondary)',
-        marginBottom: 12,
-      }}>
-        Профиль: {profile?.firstName ?? '—'} ({profile?.id?.slice(0, 8)})
-        {' · '}
-        Счётчиков: {meters.length}
-      </div>
-
-      {error && (
-        <Card>
-          <div style={{ color: '#dc2626', fontSize: 13 }}>
-            Ошибка: {error}
-          </div>
-        </Card>
-      )}
-
-      {!error && meters.length === 0 && (
+      {meters.length === 0 && (
         <Card>
           <div style={{ textAlign: 'center', padding: 20, color: 'var(--hint)' }}>
             <div style={{ fontSize: 44 }}>📊</div>
-            <p style={{ margin: '8px 0 0' }}>У вас нет счётчиков</p>
-            <p style={{ fontSize: 12, marginTop: 4 }}>
-              Привяжите адрес в профиле
-            </p>
+            <p>У вас нет счётчиков</p>
+            <p style={{ fontSize: 12 }}>Привяжите адрес в профиле</p>
           </div>
         </Card>
       )}
 
-      {meters.map((m) => (
-        <Card key={m.id}>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-            {TYPE_LABELS[m.type] ?? m.type}
-          </div>
+      {meters.map((m) => {
+        const list = readings[m.id] ?? [];
+        const last = list[0];
+        const isOpen = expanded.has(m.id);
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input
-              type="text"
-              inputMode="decimal"
-              placeholder={`Значение, ${m.unit ?? ''}`}
-              value={values[m.id] ?? ''}
-              onChange={(e) => setValues((v) => ({ ...v, [m.id]: e.target.value }))}
-              style={{ flex: 1, marginBottom: 0 }}
-            />
-            <button
-              onClick={() => submit(m.id)}
-              disabled={busy || !values[m.id]}
-              style={{
-                padding: '0 16px', borderRadius: 10, border: 'none',
-                background: 'var(--button, #2481cc)', color: '#fff',
-                fontSize: 14, fontWeight: 600,
-                cursor: busy ? 'wait' : 'pointer',
-                opacity: busy || !values[m.id] ? 0.5 : 1,
-              }}
-            >
-              {busy ? '…' : 'Передать'}
-            </button>
-          </div>
-        </Card>
-      ))}
+        return (
+          <Card key={m.id}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+              {TYPE_LABELS[m.type] ?? m.type}
+            </div>
+
+            {last && (
+              <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 8 }}>
+                Последнее: <b style={{ color: 'var(--text)' }}>{Number(last.value).toFixed(2)} {m.unit}</b>
+                {' · '}
+                {new Date(last.readingDate).toLocaleDateString('ru-RU')}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: list.length ? 8 : 0 }}>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder={`Новое значение, ${m.unit ?? ''}`}
+                value={values[m.id] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [m.id]: e.target.value }))}
+                style={{ flex: 1, marginBottom: 0 }}
+              />
+              <button
+                onClick={() => submit(m.id)}
+                disabled={busy || !values[m.id]}
+                style={{
+                  padding: '0 16px', borderRadius: 10, border: 'none',
+                  background: 'var(--button, #2481cc)', color: '#fff',
+                  fontSize: 14, fontWeight: 600,
+                  cursor: busy ? 'wait' : 'pointer',
+                  opacity: busy || !values[m.id] ? 0.5 : 1,
+                }}
+              >
+                {busy ? '…' : 'Передать'}
+              </button>
+            </div>
+
+            {list.length > 0 && (
+              <>
+                <button
+                  onClick={() => toggle(m.id)}
+                  style={{
+                    width: '100%', padding: 8,
+                    border: 'none', background: 'transparent',
+                    color: 'var(--link, #2481cc)',
+                    fontSize: 13, cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  {isOpen ? '▼' : '▶'} Хронология ({list.length})
+                </button>
+
+                {isOpen && (
+                  <div style={{
+                    marginTop: 4, paddingTop: 8,
+                    borderTop: '1px solid var(--separator)',
+                  }}>
+                    {list.map((r, i) => (
+                      <div
+                        key={r.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 0',
+                          borderBottom: i < list.length - 1 ? '1px solid var(--separator)' : 'none',
+                          fontSize: 13,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600 }}>
+                            {Number(r.value).toFixed(2)} {m.unit}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--hint)' }}>
+                            {new Date(r.readingDate).toLocaleString('ru-RU')}
+                            {r.authorName && ` · ${r.authorName}`}
+                          </div>
+                        </div>
+                        {r.consumption != null && (
+                          <div style={{
+                            fontSize: 12, color: '#10b981', fontWeight: 600,
+                            padding: '2px 8px', borderRadius: 6,
+                            background: 'rgba(16,185,129,0.1)',
+                          }}>
+                            +{r.consumption}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        );
+      })}
     </main>
   );
 }

@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { OpenInMax } from '@/components/OpenInMax';
 import { usePolling } from '@/hooks/usePolling';
 import { ProfileLink } from '@/components/ProfileLink';
+import { HomeActions } from '@/components/ui/HomeActions';
 
 type Ticket = {
   id: string;
@@ -89,9 +90,7 @@ export default function HomePage() {
     >
       <ProfileLink />
 
-      <button onClick={() => router.push('/meters')}>
-        📊 Показания счётчиков
-      </button>
+      <HomeActions />
 
       {loading && <Spinner />}
 
