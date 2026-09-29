@@ -1,0 +1,520 @@
+openapi: 3.1.0
+info:
+  title: ЖКХ в MAX API
+  version: 1.0.0
+  description: |
+    API сервиса обращений жителей в сфере ЖКХ через мессенджер MAX.
+    Все запросы (кроме публичных) требуют авторизации через cookie
+    `app_token`, которая устанавливается после `POST /api/auth`.
+
+servers:
+  - url: https://45.132.176.239.nip.io
+    description: Production (Cloud.ru)
+
+tags:
+  - name: Auth
+    description: Авторизация через MAX initData
+  - name: Categories
+    description: Справочник категорий обращений
+  - name: Tickets
+    description: Обращения жителей
+  - name: UK
+    description: Кабинет управляющей компании
+  - name: Meters
+    description: Показания счётчиков
+  - name: Cron
+    description: Служебные задачи по расписанию
+
+paths:
+  # ─── AUTH ─────────────────────────────────────────────
+  /api/auth:
+    post:
+      tags: [Auth]
+      summary: Авторизация через MAX initData
+      description: Принимает initData от Mini App, верифицирует подпись, создаёт/обновляет профиль, устанавливает cookie `app_token`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [initData]
+              properties:
+                initData:
+                  type: string
+                  description: Строка initData от MAX WebApp
+      responses:
+        '200':
+          description: Успешная авторизация
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  profile:
+                    $ref: '#/components/schemas/Profile'
+        '401':
+          description: Неверная подпись initData
+
+  /api/me:
+    get:
+      tags: [Auth]
+      summary: Текущий профиль
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Профиль пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          description: Не авторизован
+
+  # ─── CATEGORIES ───────────────────────────────────────
+  /api/categories:
+    get:
+      tags: [Categories]
+      summary: Список категорий обращений
+      responses:
+        '200':
+          description: Массив категорий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  # ─── TICKETS ──────────────────────────────────────────
+  /api/tickets:
+    get:
+      tags: [Tickets]
+      summary: Список обращений текущего пользователя
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Массив обращений
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketShort'
+        '401':
+          description: Не авторизован
+
+    post:
+      tags: [Tickets]
+      summary: Создать обращение
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCreate'
+      responses:
+        '201':
+          description: Обращение создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          description: Ошибка валидации
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нет прав на помещение
+
+  /api/tickets/{id}:
+    get:
+      tags: [Tickets]
+      summary: Карточка обращения
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Обращение с сообщениями и событиями
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFull'
+        '404':
+          description: Не найдено
+
+  /api/tickets/{id}/messages:
+    post:
+      tags: [Tickets]
+      summary: Отправить сообщение в тред
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 2000 }
+                attachments:
+                  type: array
+                  items: { type: string, format: uri }
+      responses:
+        '201':
+          description: Сообщение создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessage'
+        '401':
+          description: Не авторизован
+
+  # ─── UK ───────────────────────────────────────────────
+  /api/uk/tickets:
+    get:
+      tags: [UK]
+      summary: Очередь обращений УК
+      description: Возвращает обращения по домам УК. Доступно только роли `uk` или `admin`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: overdue
+          in: query
+          schema: { type: string, enum: ['1'] }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [new, sla, priority] }
+      responses:
+        '200':
+          description: Массив обращений
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketShort'
+        '403':
+          description: Нет прав (не УК)
+
+  /api/uk/tickets/{id}/status:
+    patch:
+      tags: [UK]
+      summary: Изменить статус обращения
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [accepted, in_progress, done, rejected, escalated]
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Статус обновлён
+        '403':
+          description: Нет прав
+        '404':
+          description: Не найдено
+
+  /api/uk/tickets/map:
+    get:
+      tags: [UK]
+      summary: Заявки с координатами для карты
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Массив заявок с lat/lng
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketMapPoint'
+
+  /api/uk/meters:
+    get:
+      tags: [UK]
+      summary: Дашборд счётчиков по домам УК
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Сводка + список квартир
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UKMetersResponse'
+
+  # ─── METERS ───────────────────────────────────────────
+  /api/meters:
+    get:
+      tags: [Meters]
+      summary: Счётчики текущего жителя
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Массив счётчиков
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Meter'
+
+  /api/meters/readings:
+    get:
+      tags: [Meters]
+      summary: История показаний
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: meterId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Массив показаний с потреблением
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MeterReading'
+
+    post:
+      tags: [Meters]
+      summary: Передать показания
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meterId, value]
+              properties:
+                meterId: { type: string, format: uuid }
+                value: { type: number, minimum: 0 }
+      responses:
+        '201':
+          description: Показание создано
+        '403':
+          description: Нет прав
+
+  # ─── CRON ─────────────────────────────────────────────
+  /api/cron/sla:
+    get:
+      tags: [Cron]
+      summary: Эскалация просроченных SLA
+      description: Вызывается планировщиком раз в час. Требует Bearer-токен в заголовке.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Результат проверки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  warned: { type: integer }
+                  escalated: { type: integer }
+                  at: { type: string, format: date-time }
+        '403':
+          description: Неверный секрет
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: app_token
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    TicketId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    Profile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        maxUserId: { type: integer }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        role:
+          type: string
+          enum: [resident, uk, contractor, admin]
+
+    Category:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        defaultSlaHours: { type: integer, nullable: true }
+
+    TicketShort:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status:
+          type: string
+          enum: [new, accepted, in_progress, done, rejected, escalated]
+        priority:
+          type: string
+          enum: [low, normal, high, emergency]
+        categoryName: { type: string, nullable: true }
+        houseAddress: { type: string, nullable: true }
+        premiseNumber: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        slaDeadline: { type: string, format: date-time, nullable: true }
+
+    TicketCreate:
+      type: object
+      required: [title, categoryId, premiseId]
+      properties:
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000, nullable: true }
+        categoryId: { type: integer }
+        premiseId: { type: string, format: uuid }
+        priority: { type: string, enum: [low, normal, high, emergency] }
+        photos:
+          type: array
+          maxItems: 5
+          items: { type: string, format: uri }
+        lat: { type: number, nullable: true }
+        lng: { type: number, nullable: true }
+        locationAddress: { type: string, nullable: true }
+
+    Ticket:
+      allOf:
+        - $ref: '#/components/schemas/TicketShort'
+        - type: object
+          properties:
+            description: { type: string, nullable: true }
+            photos:
+              type: array
+              items: { type: string, format: uri }
+            lat: { type: string, nullable: true }
+            lng: { type: string, nullable: true }
+            locationAddress: { type: string, nullable: true }
+
+    TicketFull:
+      type: object
+      properties:
+        ticket: { $ref: '#/components/schemas/Ticket' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/TicketMessage' }
+        events:
+          type: array
+          items: { type: object }
+
+    TicketMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        body: { type: string }
+        attachments:
+          type: array
+          items: { type: string, format: uri }
+        isSystem: { type: boolean, nullable: true }
+        createdAt: { type: string, format: date-time }
+        authorName: { type: string, nullable: true }
+
+    TicketMapPoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        lat: { type: string }
+        lng: { type: string }
+        locationAddress: { type: string, nullable: true }
+        houseAddress: { type: string, nullable: true }
+        premiseNumber: { type: string, nullable: true }
+
+    Meter:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        premiseId: { type: string, format: uuid }
+        type: { type: string, enum: [water_cold, water_hot, electricity, gas, heating] }
+        unit: { type: string, nullable: true }
+
+    MeterReading:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        value: { type: string }
+        readingDate: { type: string, format: date-time }
+        authorName: { type: string, nullable: true }
+        consumption: { type: number, nullable: true }
+
+    UKMetersResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total: { type: integer }
+            stale: { type: integer }
+            warning: { type: integer }
+            ok: { type: integer }
+        premises:
+          type: array
+          items:
+            type: object
+            properties:
+              premiseId: { type: string, format: uuid }
+              premiseNumber: { type: string }
+              houseAddress: { type: string }
+              status: { type: string, enum: [ok, warning, stale] }
+              lastReadingDate: { type: string, format: date-time, nullable: true }
+              meters:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    type: { type: string }
+                    unit: { type: string, nullable: true }
+                    lastValue: { type: string, nullable: true }
+                    lastDate: { type: string, format: date-time, nullable: true }
+                    daysSince: { type: integer, nullable: true }
+                    status: { type: string, enum: [ok, warning, stale] }

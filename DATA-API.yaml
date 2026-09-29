@@ -1,0 +1,261 @@
+# ─────────────────────────────────────────────────────────
+# DATA-API для платформы оценки
+# ─────────────────────────────────────────────────────────
+
+# 1. Версия конфигурации
+configVersion: "1.0"
+
+# 2. Наименование решения
+solution:
+  name: "ЖКХ в MAX"
+  teamId: "maxhackathon"
+
+# 3. Базовый адрес API
+baseUrl: "https://45.132.176.239.nip.io"
+
+# Авторизация
+auth:
+  type: "cookie"
+  description: |
+    Cookie `app_token` устанавливается после POST /api/auth
+    с телом {"initData": "<строка из MAX>"}.
+    Для автоматизированной проверки можно использовать
+    подстановку готового JWT в cookie.
+  cookieName: "app_token"
+
+# 4. Обязательные проверки (основная функциональность)
+requiredChecks:
+
+  # ─── Auth ─────────────────────────────────────────────
+  - id: auth_login
+    title: "Авторизация через MAX initData"
+    method: POST
+    path: /api/auth
+    role: any
+    request:
+      headers:
+        Content-Type: application/json
+      body:
+        initData: "<строка initData от MAX>"
+    expected:
+      statusCodes: [200, 401]
+      contentType: application/json
+      schema:
+        ok: boolean
+        profile: object
+
+  - id: auth_me
+    title: "Получить текущий профиль"
+    method: GET
+    path: /api/me
+    role: resident
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      schema:
+        id: uuid
+        maxUserId: integer
+        role: string
+
+  # ─── Categories ───────────────────────────────────────
+  - id: categories_list
+    title: "Список категорий обращений"
+    method: GET
+    path: /api/categories
+    role: any
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      schema:
+        type: array
+        item:
+          id: integer
+          code: string
+          name: string
+
+  # ─── Tickets (житель) ─────────────────────────────────
+  - id: tickets_list_my
+    title: "Мои обращения"
+    method: GET
+    path: /api/tickets
+    role: resident
+    expected:
+      statusCodes: [200, 401]
+      contentType: application/json
+
+  - id: tickets_create
+    title: "Создать обращение"
+    method: POST
+    path: /api/tickets
+    role: resident
+    request:
+      headers:
+        Content-Type: application/json
+      body:
+        title: "Течёт кран на кухне"
+        description: "Капает всю ночь"
+        categoryId: 1
+        premiseId: "<uuid помещения>"
+        priority: "high"
+    expected:
+      statusCodes: [201, 400, 403]
+      contentType: application/json
+      schema:
+        id: uuid
+        title: string
+        status: string
+
+  - id: tickets_get_one
+    title: "Карточка обращения"
+    method: GET
+    path: /api/tickets/{id}
+    role: resident
+    pathParams:
+      id: uuid
+    expected:
+      statusCodes: [200, 404]
+      contentType: application/json
+      schema:
+        ticket: object
+        messages: array
+        events: array
+
+  - id: tickets_send_message
+    title: "Отправить сообщение в тред"
+    method: POST
+    path: /api/tickets/{id}/messages
+    role: resident
+    pathParams:
+      id: uuid
+    request:
+      headers:
+        Content-Type: application/json
+      body:
+        body: "Когда приедете?"
+    expected:
+      statusCodes: [201, 401]
+      contentType: application/json
+      schema:
+        id: uuid
+        body: string
+        createdAt: datetime
+
+  # ─── UK ───────────────────────────────────────────────
+  - id: uk_tickets_list
+    title: "Очередь обращений УК"
+    method: GET
+    path: /api/uk/tickets
+    role: uk
+    queryParams:
+      status: string (optional)
+      sort: string (optional)
+    expected:
+      statusCodes: [200, 403]
+      contentType: application/json
+
+  - id: uk_ticket_status
+    title: "Изменить статус обращения"
+    method: PATCH
+    path: /api/uk/tickets/{id}/status
+    role: uk
+    pathParams:
+      id: uuid
+    request:
+      headers:
+        Content-Type: application/json
+      body:
+        status: "in_progress"
+        comment: "Взяли в работу"
+    expected:
+      statusCodes: [200, 403, 404]
+      contentType: application/json
+
+  - id: uk_tickets_map
+    title: "Карта заявок УК"
+    method: GET
+    path: /api/uk/tickets/map
+    role: uk
+    expected:
+      statusCodes: [200, 403]
+      contentType: application/json
+      schema:
+        type: array
+        item:
+          id: uuid
+          lat: string
+          lng: string
+
+  - id: uk_meters_dashboard
+    title: "Дашборд счётчиков УК"
+    method: GET
+    path: /api/uk/meters
+    role: uk
+    expected:
+      statusCodes: [200, 403]
+      contentType: application/json
+      schema:
+        summary:
+          total: integer
+          stale: integer
+          warning: integer
+          ok: integer
+        premises: array
+
+  # ─── Meters (житель) ──────────────────────────────────
+  - id: meters_list
+    title: "Мои счётчики"
+    method: GET
+    path: /api/meters
+    role: resident
+    expected:
+      statusCodes: [200, 401]
+      contentType: application/json
+      schema:
+        type: array
+        item:
+          id: uuid
+          type: string
+          unit: string
+
+  - id: meter_readings_history
+    title: "История показаний"
+    method: GET
+    path: /api/meters/readings
+    role: resident
+    queryParams:
+      meterId: uuid (required)
+    expected:
+      statusCodes: [200, 401]
+      contentType: application/json
+
+  - id: meter_readings_create
+    title: "Передать показания"
+    method: POST
+    path: /api/meters/readings
+    role: resident
+    request:
+      headers:
+        Content-Type: application/json
+      body:
+        meterId: uuid
+        value: 123.45
+    expected:
+      statusCodes: [201, 403]
+      contentType: application/json
+
+  # ─── Cron ─────────────────────────────────────────────
+  - id: cron_sla
+    title: "Эскалация SLA"
+    method: GET
+    path: /api/cron/sla
+    role: service
+    request:
+      headers:
+        Authorization: "Bearer <CRON_SECRET>"
+    expected:
+      statusCodes: [200, 403]
+      contentType: application/json
+      schema:
+        warned: integer
+        escalated: integer
+        at: datetime

@@ -1,0 +1,35 @@
+{
+  "categories": [
+    { "code": "water_leak", "name": "Авария: вода", "defaultSlaHours": 4 },
+    { "code": "heating", "name": "Отопление", "defaultSlaHours": 8 },
+    { "code": "electricity", "name": "Электрика", "defaultSlaHours": 8 },
+    { "code": "elevator", "name": "Лифт", "defaultSlaHours": 2 },
+    { "code": "roof", "name": "Кровля", "defaultSlaHours": 48 },
+    { "code": "garbage", "name": "Мусор / уборка", "defaultSlaHours": 24 },
+    { "code": "yard", "name": "Придомовая территория", "defaultSlaHours": 72 },
+    { "code": "intercom", "name": "Домофон", "defaultSlaHours": 24 }
+  ],
+  "houses": [
+    { "address": "г. Москва, ул. Ленина, д. 15", "region": "Москва" },
+    { "address": "г. Москва, ул. Ленина, д. 17", "region": "Москва" },
+    { "address": "г. Москва, ул. Пушкина, д. 8", "region": "Москва" },
+    { "address": "г. Москва, пр. Мира, д. 42", "region": "Москва" },
+    { "address": "г. Москва, ул. Гагарина, д. 3", "region": "Москва" }
+  ],
+  "premisesPerHouse": 40,
+  "metersPerPremise": ["water_cold", "water_hot", "electricity"],
+  "testProfiles": [
+    { "maxUserId": -1001, "firstName": "УК", "lastName": "Центральная", "role": "uk" },
+    { "maxUserId": -1002, "firstName": "УК", "lastName": "Северная", "role": "uk" },
+    { "maxUserId": -2001, "firstName": "Иван", "lastName": "Слесарев", "role": "contractor" },
+    { "maxUserId": -2002, "firstName": "Пётр", "lastName": "Электрик", "role": "contractor" },
+    { "maxUserId": -3001, "firstName": "Тест", "lastName": "Житель", "role": "resident" }
+  ],
+  "sampleTicket": {
+    "title": "Течёт кран на кухне",
+    "description": "Капает всю ночь, не могу уснуть",
+    "categoryCode": "water_leak",
+    "priority": "high",
+    "status": "new"
+  }
+}
