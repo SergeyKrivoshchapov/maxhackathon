@@ -45,7 +45,6 @@ export function TicketLocation({ lat, lng, address }: Props) {
         attributionControl: false,
         dragging: false,
         scrollWheelZoom: false,
-        tap: false,
       });
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
