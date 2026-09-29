@@ -8,6 +8,13 @@
       "when": 1790329082842,
       "tag": "0000_unique_gwen_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790686099207,
+      "tag": "0001_supreme_malcolm_colcord",
+      "breakpoints": true
     }
   ]
 }
