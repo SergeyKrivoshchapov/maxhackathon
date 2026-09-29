@@ -84,7 +84,7 @@ export default function MetersPage() {
       if (!res.ok) throw new Error(await res.text());
       haptic.success();
       await dialog.alert('Показания переданы');
-      setValues((v) => ({ ...v, [meterId]: ''));
+      setValues((v) => ({ ...v, [meterId]: '' }));
       await loadAll();
     } catch (e: any) {
       haptic.error();
