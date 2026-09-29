@@ -11,7 +11,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
-import { PhotoUploader } from '@/components/PhotoUploader';
+import { PhotoUploader } from '@/components/ui/PhotoUploader';
 
 type Category = { id: number; name: string; code: string };
 
@@ -249,7 +249,6 @@ export default function NewTicketPage() {
         folder="tickets"
         disabled={busy}
       />
-
       {photos.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
           {photos.map((u) => (

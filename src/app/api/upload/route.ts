@@ -6,7 +6,9 @@ import { getProfileFromRequest } from '@/lib/max-auth';
 
 export const runtime = 'nodejs';
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/data/uploads';
+// Фиксированный путь — Turbopack не будет трейсить весь проект
+const UPLOAD_DIR = '/data/uploads';
+
 const MAX_SIZE = 5 * 1024 * 1024;
 const ALLOWED = [
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -44,26 +46,21 @@ export async function POST(req: NextRequest) {
 
     const folderRaw = String(formData.get('folder') ?? 'tickets');
     const folder = ['tickets', 'messages'].includes(folderRaw) ? folderRaw : 'tickets';
-    const dir = join(UPLOAD_DIR, folder);
 
+    // turbopackIgnore: путь фиксированный + динамический сегмент только из белого списка
+    const dir = join(/* turbopackIgnore: true */ UPLOAD_DIR, folder);
     await mkdir(dir, { recursive: true });
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
     const urls: string[] = [];
 
     for (const file of files) {
-      if (!ALLOWED.includes(file.type)) {
-        console.warn('[upload] rejected mime:', file.type);
-        continue;
-      }
-      if (file.size > MAX_SIZE) {
-        console.warn('[upload] too big:', file.size);
-        continue;
-      }
+      if (!ALLOWED.includes(file.type)) continue;
+      if (file.size > MAX_SIZE) continue;
 
       const ext = extFromMime(file.type);
       const filename = `${randomUUID()}.${ext}`;
-      const filepath = join(dir, filename);
+      const filepath = join(/* turbopackIgnore: true */ dir, filename);
 
       const buffer = Buffer.from(await file.arrayBuffer());
       await writeFile(filepath, buffer);
