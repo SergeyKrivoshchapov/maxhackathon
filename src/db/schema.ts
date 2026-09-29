@@ -83,6 +83,7 @@ export const tickets = pgTable('tickets', {
   slaDeadline: timestamp('sla_deadline', { withTimezone: true }),
   lat: numeric('lat', { precision: 10, scale: 7 }),
   lng: numeric('lng', { precision: 10, scale: 7 }),
+  locationAddress: text('location_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   closedAt: timestamp('closed_at', { withTimezone: true }),

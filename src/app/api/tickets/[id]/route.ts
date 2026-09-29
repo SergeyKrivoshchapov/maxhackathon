@@ -46,6 +46,9 @@ export async function GET(
       premiseNumber: premises.number,
       houseId: houses.id,
       houseAddress: houses.address,
+      lat: tickets.lat,
+      lng: tickets.lng,
+      locationAddress: tickets.locationAddress,
     })
     .from(tickets)
     .leftJoin(categories, eq(tickets.categoryId, categories.id))

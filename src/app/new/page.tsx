@@ -33,6 +33,8 @@ export default function NewTicketPage() {
 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  const [locationAddress, setLocationAddress] = useState<string | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
 
   // ─── Загрузка категорий с логами ───────────────────────────
   useEffect(() => {
@@ -210,16 +212,53 @@ export default function NewTicketPage() {
       </Select>
       
       <div className="section-title">Место на карте (опционально)</div>
-      <LocationPicker
-        lat={lat}
-        lng={lng}
-        onChange={(la, ln) => { setLat(la); setLng(ln); }}
-      />
-      {lat != null && lng != null && (
-        <div style={{ fontSize: 12, color: 'var(--hint)', marginTop: 6 }}>
-          📍 Координаты: {lat.toFixed(6)}, {lng.toFixed(6)}
-        </div>
+      <button
+        onClick={() => setMapOpen(true)}
+        style={{
+          width: '100%',
+          padding: 14,
+          borderRadius: 10,
+          border: lat != null ? '1px solid var(--link, #2481cc)' : '1px dashed var(--separator)',
+          background: lat != null ? 'rgba(36,129,204,0.08)' : 'var(--bg-secondary)',
+          color: 'var(--link, #2481cc)',
+          fontSize: 15,
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        {lat != null && lng != null
+          ? `📍 ${locationAddress ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`}`
+          : '📍 Указать место на карте'}
+      </button>
+
+      {lat != null && (
+        <button
+          onClick={() => { setLat(null); setLng(null); }}
+          style={{
+            marginTop: 6,
+            border: 'none',
+            background: 'transparent',
+            color: '#dc2626',
+            fontSize: 13,
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          Убрать точку
+        </button>
       )}
+
+      <LocationPicker
+        open={mapOpen}
+        initialLat={lat}
+        initialLng={lng}
+        onClose={() => setMapOpen(false)}
+        onConfirm={(la, ln, addr) => {
+          setLat(la);
+          setLng(ln);
+          setLocationAddress(addr ?? null);
+        }}
+      />
 
       <div className="section-title">Фото</div>
       <PhotoUploader

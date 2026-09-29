@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Textarea } from '@/components/ui/TextArea';
 import { PhotoGrid } from '@/components/ui/PhotoGrid';
+import { TicketLocation } from '@/components/ui/TicketLocation';
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -150,6 +151,12 @@ export default function TicketPage() {
         </div>
       )}
       
+      <TicketLocation
+        lat={ticket.lat}
+        lng={ticket.lng}
+        address={ticket.locationAddress}
+      />
+
       <PhotoGrid urls={ticket.photos ?? []} columns={3} />
 
       <div className="section-title">Сообщения</div>

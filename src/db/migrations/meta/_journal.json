@@ -15,6 +15,13 @@
       "when": 1790686099207,
       "tag": "0001_supreme_malcolm_colcord",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790686473026,
+      "tag": "0002_tiny_marvel_apes",
+      "breakpoints": true
     }
   ]
 }

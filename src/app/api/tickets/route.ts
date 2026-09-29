@@ -27,6 +27,7 @@ const createTicketSchema = z.object({
   photos: z.array(z.string().url()).optional(),
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
+  locationAddress: z.string().max(500).nullable().optional(),
 });
 
 // ─── GET /api/tickets ───────────────────────────────────────
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { title, description, categoryId, premiseId, priority, photos, lat, lng } =
+  const { title, description, categoryId, premiseId, priority, photos, lat, lng, locationAddress } =
     parsed.data;
 
   // 2. Проверка прав на помещение
@@ -148,6 +149,7 @@ export async function POST(req: NextRequest) {
         status: 'new',
         lat: lat != null ? String(lat) : null, 
         lng: lng != null ? String(lng) : null,
+        locationAddress: locationAddress ?? null,
       })
       .returning();
 

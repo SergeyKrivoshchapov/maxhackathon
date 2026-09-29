@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/TextArea';
 import { PhotoGrid } from '@/components/ui/PhotoGrid';
+import { TicketLocation } from '@/components/ui/TicketLocation';
 
 const STATUS_OPTIONS = [
   { value: 'accepted', label: 'Принята' },
@@ -131,6 +132,12 @@ export default function UKTicketPage() {
         </div>
       )}
       
+      <TicketLocation
+        lat={ticket.lat}
+        lng={ticket.lng}
+        address={ticket.locationAddress}
+      />
+
       <PhotoGrid urls={ticket.photos ?? []} columns={3} />
 
       <div className="section-title">Назначить исполнителя</div>
