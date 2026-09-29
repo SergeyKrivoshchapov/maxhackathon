@@ -8,6 +8,28 @@ import { getProfileFromRequest } from '@/lib/max-auth';
 
 export const runtime = 'nodejs';
 
+type MeterStatus = 'ok' | 'warning' | 'stale';
+
+type MeterInfo = {
+  id: string;
+  type: string;
+  unit: string | null;
+  lastValue: string | null;
+  lastDate: string | null;
+  lastAuthor: string | null;
+  daysSince: number | null;
+  status: MeterStatus;
+};
+
+type PremiseInfo = {
+  premiseId: string;
+  premiseNumber: string;
+  houseAddress: string;
+  meters: MeterInfo[];
+  lastReadingDate: string | null;
+  status: MeterStatus;
+};
+
 export async function GET() {
   const me = await getProfileFromRequest();
   if (!me) return NextResponse.json({ error: 'unauth' }, { status: 401 });
@@ -15,14 +37,21 @@ export async function GET() {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
+  // Дома УК
   const myHouses = await db
     .select({ id: houses.id })
     .from(houses)
     .where(eq(houses.ukId, me.id));
 
   const houseIds = myHouses.map((h) => h.id);
-  if (houseIds.length === 0) return NextResponse.json([]);
+  if (houseIds.length === 0) {
+    return NextResponse.json({
+      summary: { total: 0, stale: 0, warning: 0, ok: 0 },
+      premises: [],
+    });
+  }
 
+  // Помещения
   const myPremises = await db
     .select({
       id: premises.id,
@@ -34,8 +63,14 @@ export async function GET() {
     .where(inArray(premises.houseId, houseIds));
 
   const premiseIds = myPremises.map((p) => p.id);
-  if (premiseIds.length === 0) return NextResponse.json([]);
+  if (premiseIds.length === 0) {
+    return NextResponse.json({
+      summary: { total: 0, stale: 0, warning: 0, ok: 0 },
+      premises: [],
+    });
+  }
 
+  // Счётчики
   const meterRows = await db
     .select({
       id: meters.id,
@@ -50,12 +85,15 @@ export async function GET() {
     .leftJoin(houses, eq(premises.houseId, houses.id))
     .where(inArray(meters.premiseId, premiseIds));
 
-  // Загрузить последние показания для всех счётчиков
+  // Последние показания
   const meterIds = meterRows.map((m) => m.id);
-  const lastReadings: Record<string, any> = {};
+  const lastReadings: Record<string, {
+    value: string;
+    readingDate: Date;
+    authorName: string | null;
+  }> = {};
 
   if (meterIds.length > 0) {
-    // Получаем все показания, сортируем по дате, оставляем первые
     const readings = await db
       .select({
         meterId: meterReadings.meterId,
@@ -69,26 +107,31 @@ export async function GET() {
       .orderBy(desc(meterReadings.readingDate));
 
     for (const r of readings) {
-      if (!lastReadings[r.meterId]) lastReadings[r.meterId] = r;
+      if (!lastReadings[r.meterId] && r.readingDate) {
+        lastReadings[r.meterId] = {
+          value: r.value,
+          readingDate: r.readingDate,
+          authorName: r.authorName,
+        };
+      }
     }
   }
 
-  // Собираем по квартире
   const now = new Date();
   const DAY = 86400_000;
 
-  const premisesMap: Record<string, any> = {};
+  const premisesMap: Record<string, PremiseInfo> = {};
 
   for (const m of meterRows) {
     const key = m.premiseId;
     if (!premisesMap[key]) {
       premisesMap[key] = {
         premiseId: m.premiseId,
-        premiseNumber: m.premiseNumber,
-        houseAddress: m.houseAddress,
+        premiseNumber: m.premiseNumber ?? '',
+        houseAddress: m.houseAddress ?? '',
         meters: [],
         lastReadingDate: null,
-        status: 'ok' as 'ok' | 'warning' | 'stale',
+        status: 'ok',
       };
     }
 
@@ -97,7 +140,7 @@ export async function GET() {
       ? Math.floor((now.getTime() - new Date(last.readingDate).getTime()) / DAY)
       : null;
 
-    let meterStatus: 'ok' | 'warning' | 'stale' = 'ok';
+    let meterStatus: MeterStatus = 'ok';
     if (daysSince == null) meterStatus = 'stale';
     else if (daysSince > 60) meterStatus = 'stale';
     else if (daysSince > 35) meterStatus = 'warning';
@@ -107,39 +150,46 @@ export async function GET() {
       type: m.type,
       unit: m.unit,
       lastValue: last?.value ?? null,
-      lastDate: last?.readingDate ?? null,
+      lastDate: last?.readingDate?.toISOString() ?? null,
       lastAuthor: last?.authorName ?? null,
       daysSince,
       status: meterStatus,
     });
 
-    // Обновляем худший статус квартиры
-    if (meterStatus === 'stale') premisesMap[key].status = 'stale';
-    else if (meterStatus === 'warning' && premisesMap[key].status === 'ok') {
+    if (meterStatus === 'stale') {
+      premisesMap[key].status = 'stale';
+    } else if (meterStatus === 'warning' && premisesMap[key].status === 'ok') {
       premisesMap[key].status = 'warning';
     }
 
-    // Обновляем самую свежую дату
-    if (last && (!premisesMap[key].lastReadingDate ||
-        new Date(last.readingDate) > new Date(premisesMap[key].lastReadingDate))) {
-      premisesMap[key].lastReadingDate = last.readingDate;
+    if (
+      last &&
+      (!premisesMap[key].lastReadingDate ||
+        new Date(last.readingDate) > new Date(premisesMap[key].lastReadingDate))
+    ) {
+      premisesMap[key].lastReadingDate = last.readingDate.toISOString();
     }
   }
 
-  // Сортируем: сначала просроченные, потом по адресу
-  const result = Object.values(premisesMap).sort((a: any, b: any) => {
-    const order = { stale: 0, warning: 1, ok: 2 };
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
-    return a.houseAddress.localeCompare(b.houseAddress) ||
-           a.premiseNumber.localeCompare(b.premiseNumber);
+  // Сортировка
+  const statusOrder: Record<MeterStatus, number> = { stale: 0, warning: 1, ok: 2 };
+
+  const result = Object.values(premisesMap).sort((a, b) => {
+    const aOrder = statusOrder[a.status];
+    const bOrder = statusOrder[b.status];
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return (
+      a.houseAddress.localeCompare(b.houseAddress) ||
+      a.premiseNumber.localeCompare(b.premiseNumber)
+    );
   });
 
   // Сводка
   const summary = {
     total: result.length,
-    stale: result.filter((p: any) => p.status === 'stale').length,
-    warning: result.filter((p: any) => p.status === 'warning').length,
-    ok: result.filter((p: any) => p.status === 'ok').length,
+    stale: result.filter((p) => p.status === 'stale').length,
+    warning: result.filter((p) => p.status === 'warning').length,
+    ok: result.filter((p) => p.status === 'ok').length,
   };
 
   return NextResponse.json({ summary, premises: result });
