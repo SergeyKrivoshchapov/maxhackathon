@@ -1,6 +1,52 @@
 'use client';
 import { useState } from 'react';
 
+async function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<Blob> {
+  if (!file.type.startsWith('image/')) return file;
+  if (file.type === 'image/heic' || file.type === 'image/heif') return file;
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('no canvas ctx'));
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))),
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('image load failed'));
+    };
+
+    img.src = url;
+  });
+}
+
 type Props = {
   value: string[];
   onChange: (urls: string[]) => void;
@@ -18,6 +64,7 @@ export function PhotoUploader({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   const pick = () => {
     if (disabled || busy) return;
@@ -26,6 +73,7 @@ export function PhotoUploader({
       return;
     }
     setError(null);
+    setProgress(null);
 
     const input = document.createElement('input');
     input.type = 'file';
@@ -41,10 +89,18 @@ export function PhotoUploader({
 
       try {
         const fd = new FormData();
-        for (const f of files.slice(0, max - value.length)) {
-          fd.append('file', f);
+        const slice = files.slice(0, max - value.length);
+
+        let i = 0;
+        for (const f of slice) {
+          i++;
+          setProgress(`Сжатие ${i}/${slice.length}…`);
+          const compressed = await compressImage(f, 1600, 0.8);
+          const name = (f.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+          fd.append('file', compressed, name);
         }
-        fd.append('folder', folder);
+
+        setProgress('Загрузка…');
 
         const res = await fetch('/api/upload', {
           method: 'POST',
@@ -66,6 +122,7 @@ export function PhotoUploader({
         setError(e?.message ?? 'Ошибка загрузки');
       } finally {
         setBusy(false);
+        setProgress(null);
       }
     };
 
@@ -83,8 +140,7 @@ export function PhotoUploader({
         onClick={pick}
         disabled={disabled || busy || value.length >= max}
         style={{
-          width: '100%', padding: 14,
-          borderRadius: 10,
+          width: '100%', padding: 14, borderRadius: 10,
           border: '1px dashed var(--separator, #ccc)',
           background: 'var(--bg-secondary, #f4f4f5)',
           color: 'var(--link, #2481cc)',
@@ -93,7 +149,7 @@ export function PhotoUploader({
           opacity: disabled || busy ? 0.6 : 1,
         }}
       >
-        {busy ? 'Загрузка…' : `+ Добавить фото (${value.length}/${max})`}
+        {busy ? (progress ?? 'Загрузка…') : `+ Добавить фото (${value.length}/${max})`}
       </button>
 
       {error && (
@@ -116,9 +172,8 @@ export function PhotoUploader({
                 onClick={() => remove(u)}
                 style={{
                   position: 'absolute', top: -6, right: -6,
-                  width: 22, height: 22,
-                  borderRadius: '50%', border: 'none',
-                  background: '#dc2626', color: '#fff',
+                  width: 22, height: 22, borderRadius: '50%',
+                  border: 'none', background: '#dc2626', color: '#fff',
                   fontSize: 14, cursor: 'pointer', lineHeight: 1,
                 }}
               >
