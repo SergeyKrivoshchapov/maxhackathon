@@ -181,15 +181,6 @@ async function seedTestResidency(residentId?: string) {
 async function seedMeters() {
   section('Счётчики');
 
-  // Проверяем, сколько уже есть
-  const existing = await db.select({ count: sql<number>`count(*)` }).from(meters);
-  const current = Number(existing[0]?.count ?? 0);
-
-  if (current >= 300) {
-    log(`✅ ${current} счётчиков (уже созданы)`);
-    return;
-  }
-
   const allPremises = await db.select({ id: premises.id }).from(premises);
   if (allPremises.length === 0) {
     log('⚠️ Квартир нет, пропускаем');
@@ -205,15 +196,18 @@ async function seedMeters() {
     );
   }
 
-  // Пакетами по 500, чтобы не перегрузить запрос
   let created = 0;
   for (let i = 0; i < meterData.length; i += 500) {
     const batch = meterData.slice(i, i + 500);
-    await db.insert(meters).values(batch).onConflictDoNothing();
-    created += batch.length;
+    const result = await db
+      .insert(meters)
+      .values(batch)
+      .onConflictDoNothing()
+      .returning({ id: meters.id });
+    created += result.length;
   }
 
-  log(`✅ ${created} счётчиков создано (${allPremises.length} помещений × 3)`);
+  log(`✅ ${created} счётчиков создано (всего ${meterData.length})`);
 }
 
 // ─── MAIN ──────────────────────────────────────────────────

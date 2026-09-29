@@ -144,7 +144,9 @@ export const meters = pgTable('meters', {
   serialNumber: text('serial_number'),
   unit: text('unit').default('м³'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-});
+}, (t) => ({
+  uniqPremiseType: uniqueIndex('meters_premise_type_uniq').on(t.premiseId, t.type),
+}));
 
 export const meterReadings = pgTable('meter_readings', {
   id: uuid('id').primaryKey().defaultRandom(),

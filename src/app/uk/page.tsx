@@ -135,6 +135,25 @@ export default function UKPage() {
       >
         📥 Скачать CSV
       </button>
+
+      <button
+        onClick={() => router.push('/uk/meters')}
+        style={{
+          width: '100%',
+          padding: 12,
+          marginBottom: 12,
+          borderRadius: 10,
+          border: '1px solid var(--link, #2481cc)',
+          background: 'rgba(36,129,204,0.08)',
+          color: 'var(--link, #2481cc)',
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}
+      >
+        📊 Счётчики по домам
+      </button>
+
       <button
         onClick={() => router.push('/uk/map')}
         style={{

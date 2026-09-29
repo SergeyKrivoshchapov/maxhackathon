@@ -23,6 +23,14 @@ type Meter = {
   unit: string | null;
 };
 
+type Reading = {
+  id: string;
+  value: string;
+  readingDate: string;
+  authorName: string | null;
+  consumption: number | null;
+};
+
 export default function MetersPage() {
   const { ready, inMax } = useMax();
   const haptic = useHaptic();
@@ -30,29 +38,29 @@ export default function MetersPage() {
 
   const [meters, setMeters] = useState<Meter[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [lastReadings, setLastReadings] = useState<Record<string, any>>({});
+  const [readings, setReadings] = useState<Record<string, Reading[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useBackButton();
 
+  const loadAll = async () => {
+    const m = await fetch('/api/meters', { credentials: 'include' }).then((r) => r.json());
+    if (!Array.isArray(m)) return;
+    setMeters(m);
+
+    const allReadings: Record<string, Reading[]> = {};
+    for (const meter of m) {
+      const r = await fetch(`/api/meters/readings?meterId=${meter.id}`, { credentials: 'include' }).then((r) => r.json());
+      if (Array.isArray(r)) allReadings[meter.id] = r;
+    }
+    setReadings(allReadings);
+  };
+
   useEffect(() => {
     if (!ready || !inMax) return;
-    fetch('/api/meters', { credentials: 'include' })
-      .then((r) => r.json())
-      .then(async (d) => {
-        if (!Array.isArray(d)) return;
-        setMeters(d);
-        // Загрузить последние показания
-        const last: Record<string, any> = {};
-        for (const m of d) {
-          const r = await fetch(`/api/meters/readings?meterId=${m.id}`, { credentials: 'include' });
-          const readings = await r.json();
-          if (Array.isArray(readings) && readings.length) last[m.id] = readings[0];
-        }
-        setLastReadings(last);
-      })
-      .finally(() => setLoading(false));
+    loadAll().finally(() => setLoading(false));
   }, [ready, inMax]);
 
   const submit = async (meterId: string) => {
@@ -76,19 +84,24 @@ export default function MetersPage() {
       if (!res.ok) throw new Error(await res.text());
       haptic.success();
       await dialog.alert('Показания переданы');
-      setValues((v) => ({ ...v, [meterId]: '' }));
-      // Обновить последнее
-      const r = await fetch(`/api/meters/readings?meterId=${meterId}`, { credentials: 'include' });
-      const readings = await r.json();
-      if (Array.isArray(readings) && readings.length) {
-        setLastReadings((p) => ({ ...p, [meterId]: readings[0] }));
-      }
+      setValues((v) => ({ ...v, [meterId]: ''));
+      await loadAll();
     } catch (e: any) {
       haptic.error();
       await dialog.alert(`Ошибка: ${e.message}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const toggleExpand = (meterId: string) => {
+    haptic.tap();
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(meterId)) next.delete(meterId);
+      else next.add(meterId);
+      return next;
+    });
   };
 
   if (!ready || loading) return <Spinner />;
@@ -106,7 +119,10 @@ export default function MetersPage() {
       )}
 
       {meters.map((m) => {
-        const last = lastReadings[m.id];
+        const list = readings[m.id] ?? [];
+        const last = list[0];
+        const isOpen = expanded.has(m.id);
+
         return (
           <Card key={m.id}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
@@ -114,14 +130,14 @@ export default function MetersPage() {
             </div>
 
             {last && (
-              <div style={{ fontSize: 12, color: 'var(--hint)', marginBottom: 8 }}>
-                Последнее: <b>{Number(last.value).toFixed(2)} {m.unit}</b>
+              <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 8 }}>
+                Последнее: <b style={{ color: 'var(--text)' }}>{Number(last.value).toFixed(2)} {m.unit}</b>
                 {' · '}
                 {new Date(last.readingDate).toLocaleDateString('ru-RU')}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <Input
                 type="text"
                 inputMode="decimal"
@@ -134,13 +150,9 @@ export default function MetersPage() {
                 onClick={() => submit(m.id)}
                 disabled={busy || !values[m.id]}
                 style={{
-                  padding: '0 16px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: 'var(--button, #2481cc)',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
+                  padding: '0 16px', borderRadius: 10, border: 'none',
+                  background: 'var(--button, #2481cc)', color: '#fff',
+                  fontSize: 14, fontWeight: 600,
                   cursor: busy ? 'wait' : 'pointer',
                   opacity: busy || !values[m.id] ? 0.5 : 1,
                 }}
@@ -148,6 +160,61 @@ export default function MetersPage() {
                 Передать
               </button>
             </div>
+
+            {list.length > 0 && (
+              <button
+                onClick={() => toggleExpand(m.id)}
+                style={{
+                  width: '100%', padding: 8,
+                  border: 'none', background: 'transparent',
+                  color: 'var(--link, #2481cc)',
+                  fontSize: 13, cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                {isOpen ? '▼' : '▶'} Хронология ({list.length})
+              </button>
+            )}
+
+            {isOpen && (
+              <div style={{ marginTop: 8, borderTop: '1px solid var(--separator)', paddingTop: 8 }}>
+                {list.map((r, i) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 0',
+                      borderBottom: i < list.length - 1 ? '1px solid var(--separator)' : 'none',
+                      fontSize: 13,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {Number(r.value).toFixed(2)} {m.unit}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--hint)' }}>
+                        {new Date(r.readingDate).toLocaleString('ru-RU')}
+                        {r.authorName && ` · ${r.authorName}`}
+                      </div>
+                    </div>
+                    {r.consumption != null && (
+                      <div style={{
+                        fontSize: 12,
+                        color: '#10b981',
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        background: 'rgba(16,185,129,0.1)',
+                        borderRadius: 6,
+                      }}>
+                        +{r.consumption}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         );
       })}
