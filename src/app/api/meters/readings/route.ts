@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { desc, eq, and, inArray } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { meterReadings, meters, residencies } from '@/db/schema';
+import { meterReadings, meters, residencies, profiles } from '@/db/schema';
 import { getProfileFromRequest } from '@/lib/max-auth';
 
 export const runtime = 'nodejs';
@@ -10,9 +10,73 @@ export const runtime = 'nodejs';
 const schema = z.object({
   meterId: z.string().uuid(),
   value: z.number().positive(),
-  readingDate: z.string().optional(),
 });
 
+// ─── GET: список показаний с потреблением ──────────────
+export async function GET(req: NextRequest) {
+  const me = await getProfileFromRequest();
+  if (!me) return NextResponse.json({ error: 'unauth' }, { status: 401 });
+
+  const url = new URL(req.url);
+  const meterId = url.searchParams.get('meterId');
+  if (!meterId) return NextResponse.json([]);
+
+  console.log('[readings] meterId:', meterId, 'user:', me.id);
+
+  // Проверка доступа
+  const [meter] = await db.select().from(meters).where(eq(meters.id, meterId));
+  if (!meter) {
+    console.log('[readings] meter not found');
+    return NextResponse.json([]);
+  }
+
+  const isStaff = ['uk', 'admin'].includes(me.role);
+  if (!isStaff) {
+    const [res] = await db
+      .select()
+      .from(residencies)
+      .where(and(
+        eq(residencies.profileId, me.id),
+        eq(residencies.premiseId, meter.premiseId)
+      ));
+    if (!res) {
+      console.log('[readings] access denied');
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+  }
+
+  const rows = await db
+    .select({
+      id: meterReadings.id,
+      value: meterReadings.value,
+      readingDate: meterReadings.readingDate,
+      authorId: meterReadings.authorId,
+      authorName: profiles.firstName,
+    })
+    .from(meterReadings)
+    .leftJoin(profiles, eq(meterReadings.authorId, profiles.id))
+    .where(eq(meterReadings.meterId, meterId))
+    .orderBy(desc(meterReadings.readingDate))
+    .limit(50);
+
+  // Потребление = разница с предыдущим
+  const withConsumption = rows.map((r, i) => {
+    const prev = rows[i + 1];
+    const curr = Number(r.value);
+    const prevVal = prev ? Number(prev.value) : null;
+    return {
+      ...r,
+      consumption: prevVal != null && curr > prevVal
+        ? +(curr - prevVal).toFixed(3)
+        : null,
+    };
+  });
+
+  console.log('[readings] found:', rows.length);
+  return NextResponse.json(withConsumption);
+}
+
+// ─── POST: новое показание ──────────────────────────────
 export async function POST(req: NextRequest) {
   const me = await getProfileFromRequest();
   if (!me) return NextResponse.json({ error: 'unauth' }, { status: 401 });
@@ -22,14 +86,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { meterId, value, readingDate } = parsed.data;
+  const { meterId, value } = parsed.data;
 
-  // Проверить, что счётчик принадлежит моему помещению
-  const [meter] = await db
-    .select()
-    .from(meters)
-    .where(eq(meters.id, meterId));
-
+  const [meter] = await db.select().from(meters).where(eq(meters.id, meterId));
   if (!meter) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const [res] = await db
@@ -47,28 +106,10 @@ export async function POST(req: NextRequest) {
     .values({
       meterId,
       value: String(value),
-      readingDate: readingDate ? new Date(readingDate) : new Date(),
       authorId: me.id,
     })
     .returning();
 
+  console.log('[readings] created:', reading.id);
   return NextResponse.json(reading, { status: 201 });
-}
-
-export async function GET(req: NextRequest) {
-  const me = await getProfileFromRequest();
-  if (!me) return NextResponse.json({ error: 'unauth' }, { status: 401 });
-
-  const url = new URL(req.url);
-  const meterId = url.searchParams.get('meterId');
-  if (!meterId) return NextResponse.json([]);
-
-  const rows = await db
-    .select()
-    .from(meterReadings)
-    .where(eq(meterReadings.meterId, meterId))
-    .orderBy(desc(meterReadings.readingDate))
-    .limit(50);
-
-  return NextResponse.json(rows);
 }
