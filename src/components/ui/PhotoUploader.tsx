@@ -11,7 +11,6 @@ async function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<
 
     img.onload = () => {
       URL.revokeObjectURL(url);
-
       let { width, height } = img;
       if (width > maxDim || height > maxDim) {
         if (width > height) {
@@ -22,27 +21,22 @@ async function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<
           height = maxDim;
         }
       }
-
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error('no canvas ctx'));
       ctx.drawImage(img, 0, 0, width, height);
-
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))),
         'image/jpeg',
         quality
       );
     };
-
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error('image load failed'));
     };
-
     img.src = url;
   });
 }
@@ -82,6 +76,7 @@ export function PhotoUploader({
 
     input.onchange = async () => {
       const files = Array.from(input.files ?? []);
+      console.log('[uploader] files selected:', files.length);
       if (!files.length) return;
 
       setBusy(true);
@@ -97,7 +92,9 @@ export function PhotoUploader({
           setProgress(`Сжатие ${i}/${slice.length}…`);
           const compressed = await compressImage(f, 1600, 0.8);
           const name = (f.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+          // ← ВАЖНО: одно и то же имя поля 'file'
           fd.append('file', compressed, name);
+          console.log('[uploader] appended', name);
         }
 
         setProgress('Загрузка…');
@@ -114,11 +111,14 @@ export function PhotoUploader({
         }
 
         const data = await res.json();
-        if (Array.isArray(data.urls)) {
+        console.log('[uploader] response:', data);
+
+        if (Array.isArray(data.urls) && data.urls.length) {
+          // ← ВАЖНО: use функциональный setState
           onChange([...value, ...data.urls]);
         }
       } catch (e: any) {
-        console.error('[upload] failed', e);
+        console.error('[uploader] failed', e);
         setError(e?.message ?? 'Ошибка загрузки');
       } finally {
         setBusy(false);

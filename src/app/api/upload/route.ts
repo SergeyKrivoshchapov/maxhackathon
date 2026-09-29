@@ -6,9 +6,7 @@ import { getProfileFromRequest } from '@/lib/max-auth';
 
 export const runtime = 'nodejs';
 
-// Фиксированный путь — Turbopack не будет трейсить весь проект
 const UPLOAD_DIR = '/data/uploads';
-
 const MAX_SIZE = 5 * 1024 * 1024;
 const ALLOWED = [
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -24,7 +22,7 @@ function extFromMime(mime: string): string {
     'image/heic': 'heic',
     'image/heif': 'heif',
   };
-  return map[mime] ?? 'bin';
+  return map[mime] ?? 'jpg';
 }
 
 export async function POST(req: NextRequest) {
@@ -35,7 +33,11 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
+
+    // ← ВАЖНО: getAll, а не get
     const files = formData.getAll('file').filter((f): f is File => f instanceof File);
+
+    console.log('[upload] received files:', files.length);
 
     if (!files.length) {
       return NextResponse.json({ error: 'no files' }, { status: 400 });
@@ -46,17 +48,22 @@ export async function POST(req: NextRequest) {
 
     const folderRaw = String(formData.get('folder') ?? 'tickets');
     const folder = ['tickets', 'messages'].includes(folderRaw) ? folderRaw : 'tickets';
-
-    // turbopackIgnore: путь фиксированный + динамический сегмент только из белого списка
     const dir = join(/* turbopackIgnore: true */ UPLOAD_DIR, folder);
+
     await mkdir(dir, { recursive: true });
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
     const urls: string[] = [];
 
     for (const file of files) {
-      if (!ALLOWED.includes(file.type)) continue;
-      if (file.size > MAX_SIZE) continue;
+      if (!ALLOWED.includes(file.type)) {
+        console.warn('[upload] skip mime:', file.type, file.name);
+        continue;
+      }
+      if (file.size > MAX_SIZE) {
+        console.warn('[upload] skip too big:', file.size, file.name);
+        continue;
+      }
 
       const ext = extFromMime(file.type);
       const filename = `${randomUUID()}.${ext}`;
@@ -67,7 +74,8 @@ export async function POST(req: NextRequest) {
 
       const publicUrl = `${appUrl}/uploads/${folder}/${filename}`;
       urls.push(publicUrl);
-      console.log('[upload] saved:', filepath);
+
+      console.log('[upload] saved:', filepath, '→', publicUrl);
     }
 
     if (!urls.length) {
