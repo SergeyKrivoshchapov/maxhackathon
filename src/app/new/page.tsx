@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
+import { PhotoUploader } from '@/components/PhotoUploader';
 
 type Category = { id: number; name: string; code: string };
 
@@ -241,23 +242,13 @@ export default function NewTicketPage() {
       </Select>
 
       <div className="section-title">Фото</div>
-      <button
-        onClick={pickPhoto}
+      <PhotoUploader
+        value={photos}
+        onChange={setPhotos}
+        max={5}
+        folder="tickets"
         disabled={busy}
-        style={{
-          width: '100%',
-          padding: 14,
-          borderRadius: 10,
-          border: '1px dashed var(--separator)',
-          background: 'var(--bg-secondary)',
-          color: 'var(--link)',
-          fontSize: 15,
-          cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        }}
-      >
-        + Добавить фото
-      </button>
+      />
 
       {photos.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
